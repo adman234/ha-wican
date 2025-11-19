@@ -3,3 +3,5 @@ config/
 
 #PY Cache
 custom_components/wican/__pycache__/*
+
+bruno/

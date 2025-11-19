@@ -3,9 +3,8 @@
     "name": "WiCAN",
     "codeowners": ["@jay-oswald"],
     "config_flow": true,
-    "dependencies": ["http"],
+    "dependencies": ["webhook"],
     "documentation": "https://github.com/jay-oswald/ha-wican",
-    "integration_type": "hub",
-    "iot_class": "local_polling",
-    "version": "0.3.0"
+    "iot_class": "local_push",
+    "version": "0.4.0"
 }

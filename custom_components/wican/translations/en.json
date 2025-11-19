@@ -1,102 +1,34 @@
 {
     "config": {
-        "error": {
-            "invalid_config": "Failed validation, double check the IP, as well as check if you have protocol set to auto_pid",
-            "cannot_connect": "WiCAN Connection error, are you sure the IP is correct?",
-            "unknown": "WiCAN not validated, unknown error"
-        },
-        "step": {
-            "user": {
-                "title": "Config for WiCAN Integration",
-                "description": "Enter the IP-Address for your WiCAN device. It should be static or fixed in your router to avoid connection issues. Please also make sure your protocol is set to 'auto_pid'. If you need help setting it up, you can find it here: https://github.com/jay-oswald/ha-wican",
-                "data": {
-                    "ip_address": "WiCAN IP-Address",
-                    "scan_interval": "Polling Interval in seconds [min: 5sec]"
-                }
-            }
+      "step": {
+        "user": {
+          "title": "Set up WiCAN",
+          "description": "Are you sure you want to set up the WiCAN integration?"
         }
-    },
-    "options": {
-        "step": {
-            "init": {
-                "title": "Config for WiCAN Integration",
-                "data": {
-                    "scan_interval": "Polling Interval in seconds [min: 5sec]"
-                }
-            }
-        }
+      },
+      "abort": {
+        "cloud_not_connected": "[%key:common::config_flow::abort::cloud_not_connected%]",
+        "webhook_not_internet_accessible": "[%key:common::config_flow::abort::webhook_not_internet_accessible%]"
+      },
+      "create_entry": {
+        "default": "To send events to Home Assistant, you will need to set up a webhook.\n\nOpen WiCAN and go to *Settings → Services → Automation → Webhooks*\n\nEnable *Webhooks* and fill in the following webhook in the URL field:\n\n`{webhook_url}`\n\nSee [the documentation]({docs_url}) for further details."
+      }
     },
     "entity": {
-        "binary_sensor": {
-            "batt_alert": {
-                "name": "Battery Alert",
-                "state": {
-                    "on": "Disabled",
-                    "off": "Enabled"
-                },
-                "state_attributes": {
-                    "wifi": {"name": "Wifi SSID"},
-                    "voltage": {"name": "Voltage for Warnung"},
-                    "url": {"name": "MQTT Broker URL"},
-                    "port": {"name": "MQTT Broker Port"},
-                    "user": {"name": "MQTT User"}
-                }
-            },
-            "ble_status": {
-                "name": "Bluetooth Status",
-                "state": {
-                    "on": "Disabled",
-                    "off": "Enabled"
-                }
-            },
-            "ecu_status": {
-                "name": "ECU Status",
-                "state": {
-                    "on": "Online",
-                    "off": "Offline"
-                }
-            },
-            "mqtt_en": {
-                "name": "MQTT Status",
-                "state": {
-                    "on": "Disabled",
-                    "off": "Enabled"
-                },
-                "state_attributes": {
-                    "url": {"name": "MQTT Broker URL"},
-                    "port": {"name": "MQTT Broker Port"},
-                    "user": {"name": "MQTT User"}
-                }
-            },
-            "sleep_status": {
-                "name": "Sleep Status",
-                "state": {
-                    "on": "Disabled",
-                    "off": "Enabled"
-                },
-                "state_attributes": {
-                    "voltage": {"name": "Sleep Voltage"}
-                }
-            }
+      "sensor": {
+        "voltage": {
+          "name": "Main battery voltage"
         },
-        "sensor": {
-            "batt_voltage": {"name": "Battery Voltage"},
-            "protocol": {
-                "name": "Mode",
-                "state": {
-                    "auto_pid": "AutoPID",
-                    "elm327": "ELM327",
-                    "realdash66": "realdash 66",
-                    "savvycan": "SavvyCAN",
-                    "slcan": "CAN over Serial / SLCAN"
-                }
-            },
-            "sta_ip": {"name": "IP Address"}
+        "next_alarm": {
+          "name": "Next alarm"
+        },
+        "alarm_label": {
+          "name": "Alarm label",
+          "state": {
+            "alarm": "Alarm"
+          }
         }
-    },
-    "exceptions": {
-        "cannot_connect": {
-            "message": "WiCAN device not available. IP-Address: {ip_address}"
-        }
+      }
     }
-}
+  }
+  
