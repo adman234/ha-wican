@@ -46,10 +46,9 @@ async def async_setup_entry(
 
     # Restore PID sensors from config entry
     pid_keys = config_entry.data.get("pid_keys", [])
+    pid_config = config_entry.data.get("config", {})
     restored_entities = []
     for pid_key in pid_keys:
-        # Try to get config for this PID key if available
-        pid_config = config_entry.data.get("config", {})
         config = pid_config.get(pid_key, {})
         device_class = config.get("class")
         unit = config.get("unit")
@@ -60,6 +59,7 @@ async def async_setup_entry(
             name=pid_key,
             device_class=device_class,
             native_unit_of_measurement=unit,
+            state_class="measurement",
         )
         entity = WiCANPidSensorEntity(config_entry, pid_key, entity_description)
         DYNAMIC_PID_SENSORS[config_entry.entry_id][pid_key] = entity
@@ -91,8 +91,14 @@ async def async_setup_entry(
             sensors[pid_key]._async_handle_event(webhook_id, data)
         if new_entities:
             pid_keys = set(sensors.keys())
+            # Merge existing config with new config
+            existing_config = dict(config_entry.data.get("config", {}))
+            for pid_key in pid_data:
+                if pid_key in pid_config:
+                    existing_config[pid_key] = pid_config[pid_key]
             new_data = dict(config_entry.data)
             new_data["pid_keys"] = list(pid_keys)
+            new_data["config"] = existing_config
             hass.async_add_job(
                 partial(hass.config_entries.async_update_entry, config_entry, data=new_data)
             )
