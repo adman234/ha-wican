@@ -22,7 +22,13 @@ PARALLEL_UPDATES = 0
 
 
 def _normalize_device_class(device_class: str | SensorDeviceClass | None, unit: str | None) -> SensorDeviceClass | None:
-    """Convert string device_class to enum and drop invalid combos (e.g. rpm + speed)."""
+    """Convert string device_class to enum and drop invalid combos (e.g. rpm + speed).
+
+    TODO(meatpi): This is a temporary guard to avoid mismatched unit/device_class
+    combinations leaking into HA. Replace with a canonical unit-to-device-class
+    validation map and stricter config validation so we can surface clear errors
+    and avoid silently dropping classes.
+    """
     normalized = device_class
     if isinstance(device_class, str):
         try:
