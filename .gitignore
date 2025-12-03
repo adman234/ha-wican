@@ -4,4 +4,12 @@ config/
 #PY Cache
 custom_components/wican/__pycache__/*
 
+# Test and Python caches
+tests/__pycache__/*
+**/__pycache__/*
+.pytest_cache/
+
 bruno/
+
+# Python virtual environment
+.venv/

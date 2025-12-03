@@ -14,7 +14,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -33,7 +33,7 @@ DYNAMIC_PID_SENSORS = {}
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: WiCANConfigEntry,
-    async_add_entities: AddConfigEntryEntitiesCallback,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the sensor platform."""
 
@@ -118,9 +118,14 @@ class WiCANSensorEntity(WiCANEntity, RestoreSensor):
 
     @callback
     def _async_handle_event(self, webhook_id: str, data) -> None:
-        LOGGER.warning(data)
-
-        LOGGER.warning(data.get('status').get('wifi_mode'))
+        # Be defensive: data may not include a 'status' section
+        try:
+            LOGGER.debug("WiCAN event received for %s: %s", self.entity_description.key, data)
+            wifi_mode = (data.get('status') or {}).get('wifi_mode')
+            if wifi_mode is not None:
+                LOGGER.debug("WiCAN wifi_mode: %s", wifi_mode)
+        except Exception:  # logging should never break entity updates
+            pass
 
         key = self.entity_description.key
 
