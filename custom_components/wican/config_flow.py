@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from homeassistant.helpers import config_entry_flow
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.components.zeroconf import ZeroconfServiceInfo
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.const import CONF_WEBHOOK_ID
 from homeassistant.core import callback
 from homeassistant import config_entries
@@ -12,7 +12,13 @@ import logging
 import voluptuous as vol
 from uuid import uuid4
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    CONF_POST_INTERVAL,
+    DEFAULT_POST_INTERVAL,
+    MIN_POST_INTERVAL,
+    MAX_POST_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -77,3 +83,36 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_WEBHOOK_ID: webhook_id,
             },
         )
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        return WiCANOptionsFlow(config_entry)
+
+
+class WiCANOptionsFlow(config_entries.OptionsFlow):
+    """Options flow to configure WiCAN settings."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self._initial_options = dict(config_entry.options)
+
+    async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        if self.hass is not None:
+            options = dict(self.config_entry.options)
+        else:
+            options = self._initial_options
+        data_schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_POST_INTERVAL,
+                    default=options.get(CONF_POST_INTERVAL, DEFAULT_POST_INTERVAL),
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=MIN_POST_INTERVAL, max=MAX_POST_INTERVAL),
+                )
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=data_schema)
