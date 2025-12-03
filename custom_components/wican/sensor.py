@@ -136,7 +136,20 @@ class WiCANSensorEntity(WiCANEntity, RestoreSensor):
         if data['status'].get(key) is None:
             return
 
-        self._attr_native_value = data['status'][key]
+        value = data['status'][key]
+        # Normalize numeric strings with unit suffix (e.g., "11.3V") for numeric device classes
+        try:
+            if self.entity_description.device_class == SensorDeviceClass.VOLTAGE and isinstance(value, str):
+                if value.endswith("V"):
+                    value = value[:-1]
+            if isinstance(value, str):
+                # Attempt to convert to float if numeric
+                if value.replace(".", "", 1).isdigit():
+                    value = float(value)
+        except Exception:
+            # Be defensive; if parsing fails, keep original value
+            pass
+        self._attr_native_value = value
         self._attr_extra_state_attributes = get_sensor_attributes(key, data)
         self.async_write_ha_state()
 
@@ -144,7 +157,17 @@ class WiCANSensorEntity(WiCANEntity, RestoreSensor):
         """Restore entity state."""
         state = await self.async_get_last_sensor_data()
         if state:
-            self._attr_native_value = state.native_value
+            value = state.native_value
+            try:
+                if self.entity_description.device_class == SensorDeviceClass.VOLTAGE and isinstance(value, str):
+                    if value.endswith("V"):
+                        value = value[:-1]
+                if isinstance(value, str):
+                    if value.replace(".", "", 1).isdigit():
+                        value = float(value)
+            except Exception:
+                pass
+            self._attr_native_value = value
 
         await super().async_added_to_hass()
 
