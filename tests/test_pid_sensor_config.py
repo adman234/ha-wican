@@ -211,6 +211,8 @@ async def test_pid_sensor_update_existing(
     coordinator.handle_webhook_data(webhook_data_1)
     async_dispatcher_send(hass, "wican", "test_webhook_id", webhook_data_1)
     await hass.async_block_till_done()
+    await coordinator.async_request_refresh()
+    await hass.async_block_till_done()
     
     assert hass.states.get("sensor.wican_device_test_pid").state == "100"
     
@@ -222,6 +224,8 @@ async def test_pid_sensor_update_existing(
     
     coordinator.handle_webhook_data(webhook_data_2)
     async_dispatcher_send(hass, "wican", "test_webhook_id", webhook_data_2)
+    await hass.async_block_till_done()
+    await coordinator.async_request_refresh()
     await hass.async_block_till_done()
     
     # Value should be updated
@@ -251,6 +255,8 @@ async def test_pid_sensor_multiple_webhooks(
     coordinator.handle_webhook_data(webhook_data_1)
     async_dispatcher_send(hass, "wican", "test_webhook_id", webhook_data_1)
     await hass.async_block_till_done()
+    await coordinator.async_request_refresh()
+    await hass.async_block_till_done()
     
     # Second webhook with additional PIDs
     webhook_data_2 = {
@@ -262,6 +268,8 @@ async def test_pid_sensor_multiple_webhooks(
     }
     coordinator.handle_webhook_data(webhook_data_2)
     async_dispatcher_send(hass, "wican", "test_webhook_id", webhook_data_2)
+    await hass.async_block_till_done()
+    await coordinator.async_request_refresh()
     await hass.async_block_till_done()
     
     # All PIDs should exist
