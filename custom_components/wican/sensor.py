@@ -219,6 +219,7 @@ class WiCANPidSensorEntity(WiCANEntity, RestoreSensor):
         self._attr_unique_id = f"{config_entry.entry_id}_pid_{pid_key}"
         self._attr_entity_category = None  # Regular sensor
         self._pending_value = None
+        self._attr_native_value = None  # Initialize to None
 
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""

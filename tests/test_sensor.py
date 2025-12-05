@@ -161,12 +161,41 @@ async def test_sensor_voltage_normalization(
         assert batt_voltage_state.state == expected_state
 
 
-@pytest.mark.skip(reason="State restoration requires complex RestoreEntity mocking")
 async def test_sensor_state_restoration(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Test sensor state is restored on startup."""
-    # This test requires mocking RestoreEntity.async_get_last_state
-    # which is complex to set up correctly
-    pass
+    # Store a state before setup
+    hass.states.async_set(
+        "sensor.wican_device_batt_voltage",
+        "13.2",
+        {"unit_of_measurement": "V"},
+    )
+    hass.states.async_set(
+        "sensor.wican_device_wifi_mode",
+        "AP",
+    )
+    
+    # Ensure state is written to restore state storage
+    await hass.async_block_till_done()
+    
+    # Set up the integration - this should restore states
+    mock_config_entry.add_to_hass(hass)
+    
+    with patch(
+        "custom_components.wican.async_get_clientsession"
+    ), patch(
+        "custom_components.wican.WiCANDataUpdateCoordinator.async_config_entry_first_refresh"
+    ):
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+    
+    # Check that states were restored
+    batt_voltage = hass.states.get("sensor.wican_device_batt_voltage")
+    assert batt_voltage is not None
+    assert batt_voltage.state == "13.2"
+    
+    wifi_mode = hass.states.get("sensor.wican_device_wifi_mode")
+    assert wifi_mode is not None
+    assert wifi_mode.state == "AP"

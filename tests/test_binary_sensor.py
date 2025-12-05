@@ -127,12 +127,40 @@ async def test_binary_sensor_ecu_on_off(
     assert ecu_state.state == STATE_OFF
 
 
-@pytest.mark.skip(reason="State restoration requires complex RestoreEntity mocking")
 async def test_binary_sensor_state_restoration(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
 ) -> None:
     """Test binary sensor state is restored on startup."""
-    # This test requires mocking RestoreEntity.async_get_last_state
-    # which is complex to set up correctly
-    pass
+    # Store states before setup
+    hass.states.async_set(
+        "binary_sensor.wican_device_ble_status",
+        "on",
+    )
+    hass.states.async_set(
+        "binary_sensor.wican_device_ecu_status",
+        "off",
+    )
+    
+    # Ensure state is written to restore state storage
+    await hass.async_block_till_done()
+    
+    # Set up the integration - this should restore states
+    mock_config_entry.add_to_hass(hass)
+    
+    with patch(
+        "custom_components.wican.async_get_clientsession"
+    ), patch(
+        "custom_components.wican.WiCANDataUpdateCoordinator.async_config_entry_first_refresh"
+    ):
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+    
+    # Check that states were restored
+    ble_status = hass.states.get("binary_sensor.wican_device_ble_status")
+    assert ble_status is not None
+    assert ble_status.state == "on"
+    
+    ecu_status = hass.states.get("binary_sensor.wican_device_ecu_status")
+    assert ecu_status is not None
+    assert ecu_status.state == "off"
