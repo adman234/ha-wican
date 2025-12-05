@@ -24,6 +24,10 @@ from .const import (
     DOMAIN,
     CONF_POST_INTERVAL,
     DEFAULT_POST_INTERVAL,
+    WEBHOOK_REGISTRATION_TIMEOUT,
+    WEBHOOK_RETRY_DELAY_BASE,
+    WEBHOOK_MAX_RETRIES,
+    IP_CACHE_DURATION,
 )
 from .coordinator import WiCANDataUpdateCoordinator
 from .models import WiCANRuntimeData
@@ -266,7 +270,7 @@ def _schedule_webhook_registration(hass: HomeAssistant, entry: WiCANConfigEntry)
 
 
 async def _async_register_webhook_on_device(
-    hass: HomeAssistant, entry: WiCANConfigEntry, max_retries: int = 3
+    hass: HomeAssistant, entry: WiCANConfigEntry, max_retries: int = WEBHOOK_MAX_RETRIES
 ) -> bool:
     """Push webhook URL and interval to the WiCAN device with retry."""
     # Prefer direct IP/host if available (similar to WLED), fallback to mDNS
@@ -336,7 +340,6 @@ async def _async_register_webhook_on_device(
     # Build endpoint candidates: prefer direct host/IP over mDNS
     # Use cached resolved IP if available and fresh (< 5 minutes old)
     import time
-    CACHE_DURATION = 300  # 5 minutes
     
     endpoints: list[URL] = []
     
@@ -344,7 +347,7 @@ async def _async_register_webhook_on_device(
     if (
         entry.runtime_data.cached_resolved_ip
         and entry.runtime_data.cache_timestamp
-        and (time.time() - entry.runtime_data.cache_timestamp) < CACHE_DURATION
+        and (time.time() - entry.runtime_data.cache_timestamp) < IP_CACHE_DURATION
     ):
         cached_endpoint = _build_webhook_endpoint(
             f"http://{entry.runtime_data.cached_resolved_ip}"
@@ -378,8 +381,8 @@ async def _async_register_webhook_on_device(
     # Retry loop with exponential backoff
     for attempt in range(max_retries):
         try:
-            # Add timeout protection (10 seconds)
-            async with async_timeout.timeout(10):
+            # Add timeout protection
+            async with async_timeout.timeout(WEBHOOK_REGISTRATION_TIMEOUT):
                 # Try each endpoint candidate until one succeeds
                 for ep in endpoints:
                     try:
@@ -440,7 +443,8 @@ async def _async_register_webhook_on_device(
 
         except asyncio.TimeoutError:
             _LOGGER.warning(
-                "WiCAN webhook registration timeout after 10s (attempt %d/%d)",
+                "WiCAN webhook registration timeout after %ds (attempt %d/%d)",
+                WEBHOOK_REGISTRATION_TIMEOUT,
                 attempt + 1,
                 max_retries,
             )
@@ -475,7 +479,7 @@ async def _async_register_webhook_on_device(
 
         # Exponential backoff before retry (except on last attempt)
         if attempt < max_retries - 1:
-            backoff_seconds = 2 ** attempt  # 1s, 2s, 4s
+            backoff_seconds = WEBHOOK_RETRY_DELAY_BASE ** attempt  # 1s, 2s, 4s
             _LOGGER.debug("Retrying in %ds...", backoff_seconds)
             await asyncio.sleep(backoff_seconds)
 
