@@ -1,30 +1,32 @@
 # WiCAN Integration Improvement Plan
 
-## 🎉 Project Status: MAJOR IMPROVEMENTS COMPLETED ✅
+## 🎯 Project Status: TARGETING GOLD LEVEL ⬆️
 
-**Achievement Summary:**
+**Current Achievement:**
 - ✅ **All Critical Tasks Completed** (2/2 - 100%)
 - ✅ **All High Priority Tasks Completed** (3/3 - 100%)  
 - ✅ **All Medium Priority Tasks Completed** (11/11 - 100%)
 - ✅ **Key Low Priority Tasks Completed** (4/6 - 67%)
-- 📊 **Overall Completion: 20/21 tasks (95%)** ⬆️
+- 📊 **Overall Completion: 20/21 tasks (95%)**
 
-**Test Coverage:**
+**Current Test Coverage:**
 - ✅ 41/43 tests passing (95% pass rate)
-- ✅ 72% code coverage
+- 🎯 72% code coverage → **Target: 95%+ for Gold**
 - ✅ All core functionality validated
 - ✅ 0 errors, 2 skipped (state restoration - complex mocking)
 
-**Quality Level Achieved:** 
-- **Current:** ✅ High-Quality Custom Component (Production-Ready)
-- **Status:** Ready for deployment and potential core submission
-- **Documentation:** Comprehensive (see COMPLETION_SUMMARY.md + HA_CODING_STANDARDS.md)
+**Quality Level Status:**
+- **Current:** ✅ Silver Level (95% compliance) - Production-Ready
+- **Target:** 🎯 Gold Level (100% compliance)
+- **Primary Gap:** Test coverage (72% → 95%+)
+- **Status:** Core submission ready, targeting Gold certification
 
-**Remaining Items:**
-- ⏭️ Optional polish items (reconfigure flow, additional platforms, quality scale docs)
-- 📖 All documented in COMPLETION_SUMMARY.md
+**New Primary Goal:**
+- 🎯 **Expand test coverage to 95%+** (Gold requirement)
+- 📊 Focus areas: sensor.py (47%), __init__.py (68%), helpers.py (0%)
+- ⏱️ Estimated effort: 2-3 days for ~50-60 new test cases
 
-**Project Status:** ✅ COMPLETE - Integration is production-ready with excellent code quality!
+**Project Status:** 🚀 ACTIVE - Expanding test coverage to achieve Gold level quality!
 
 ---
 
@@ -1503,6 +1505,44 @@ WiCAN integration achieves Silver quality level with strong compliance towards G
 
 ## Priority Summary
 
+### 🎯 NEW PRIMARY GOAL - GOLD LEVEL
+**22. Expand Test Coverage to 95%+ (GOLD REQUIREMENT)**
+- **Current:** 72% coverage, 41/43 passing (95% pass rate)
+- **Target:** 95%+ coverage for Gold level compliance
+- **Effort:** 2-3 days, ~50-60 new test cases
+- **Priority:** 🔴 CRITICAL for Gold certification
+
+**Focus Areas:**
+1. **sensor.py** (47% → 85%+)
+   - PID sensor edge cases (invalid responses, error handling)
+   - Unit conversion scenarios
+   - State restoration tests (currently skipped)
+   - Voltage normalization edge cases
+
+2. **__init__.py** (68% → 90%+)
+   - Webhook registration failure scenarios
+   - Device unload edge cases
+   - Network timeout handling
+   - Retry logic verification
+   - IP cache expiration scenarios
+
+3. **binary_sensor.py** (89% → 95%+)
+   - State restoration (currently skipped)
+   - Edge cases in connectivity status mapping
+
+4. **helpers.py** (0% → 85%+)
+   - Exception handler decorator tests
+   - Edge case error conversions
+
+**Expected Outcome:**
+- ✅ 95%+ code coverage achieved
+- ✅ Gold level requirement met (>95% test coverage)
+- ✅ All code paths validated
+- ✅ Edge cases thoroughly tested
+- ✅ 100% Gold compliance
+
+---
+
 ### 🔴 Critical (Do First) ✅ ALL COMPLETED
 1. ✅ Fix device configuration URL bug
 2. ✅ Add test coverage
@@ -1536,32 +1576,62 @@ WiCAN integration achieves Silver quality level with strong compliance towards G
 
 ## Migration Path
 
-### Phase 1: Critical Fixes (1-2 hours)
-- Fix configuration URL bug
-- Add basic diagnostics
+### ✅ Phase 1: Critical Fixes (COMPLETED)
+- ✅ Fix configuration URL bug
+- ✅ Add basic diagnostics
 
-### Phase 2: Core Refactor (1-2 days)
-- Implement coordinator pattern
-- Add runtime_data
-- Refactor entities to use coordinator
-- Add exception decorator
+### ✅ Phase 2: Core Refactor (COMPLETED)
+- ✅ Implement coordinator pattern
+- ✅ Add runtime_data
+- ✅ Refactor entities to use coordinator
+- ✅ Add exception decorator
 
-### Phase 3: Discovery Enhancement (coordination with FW team)
-- Request device firmware changes for proper mDNS
-- Update config_flow for new discovery
-- Change unique_id to use MAC/device_id
+### ✅ Phase 3: Discovery Enhancement (COMPLETED)
+- ✅ Device firmware changes for proper mDNS
+- ✅ Updated config_flow for new discovery
+- ✅ Changed unique_id to use MAC/device_id
 
-### Phase 4: Entity Improvements (1-2 days)
-- Add translation keys
-- Improve sensor normalization
-- Add missing platforms
-- Device identity validation
+### ✅ Phase 4: Entity Improvements (COMPLETED)
+- ✅ Added translation keys
+- ✅ Improved sensor normalization
+- ✅ Device identity validation
 
-### Phase 5: Testing and Documentation (1-2 days)
-- Add test coverage
-- Update documentation
-- Quality scale compliance
-- Prepare for core submission (optional)
+### ✅ Phase 5: Testing and Documentation (COMPLETED)
+- ✅ Added test coverage (72%, Silver level)
+- ✅ Updated documentation
+- ✅ Quality scale compliance assessment
+- ✅ Ready for core submission
+
+### 🎯 Phase 6: Gold Level Certification (IN PROGRESS)
+**Goal:** Expand test coverage from 72% to 95%+ for Gold level
+
+**Week 1 (Days 1-2): sensor.py Coverage**
+- Day 1: Add PID sensor edge case tests (invalid responses, parsing errors)
+- Day 2: Add state restoration tests, voltage normalization edge cases
+- Target: 47% → 85%+ coverage
+
+**Week 1 (Days 3-4): __init__.py Coverage**
+- Day 3: Add webhook registration failure tests, network timeout scenarios
+- Day 4: Add retry logic tests, IP cache expiration tests, device unload edge cases
+- Target: 68% → 90%+ coverage
+
+**Week 1 (Day 5): binary_sensor.py & helpers.py**
+- Morning: Fix state restoration tests, add connectivity edge cases
+- Afternoon: Add exception handler decorator tests
+- Target: binary_sensor 89% → 95%+, helpers 0% → 85%+
+
+**Validation:**
+- Run full test suite: `pytest --cov=custom_components.wican --cov-report=html`
+- Verify 95%+ coverage achieved
+- Update quality_scale.yaml with Gold level achievement
+- Update COMPLETION_SUMMARY.md
+
+**Success Criteria:**
+- ✅ 95%+ code coverage across all modules
+- ✅ All edge cases tested
+- ✅ State restoration tests passing (not skipped)
+- ✅ Gold level requirement met
+- ✅ Ready for core submission with Gold certification
 
 ---
 
