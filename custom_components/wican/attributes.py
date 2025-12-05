@@ -15,6 +15,7 @@ class WiCANSensorEntityDescription(SensorEntityDescription):
 SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
     WiCANSensorEntityDescription(
         key="wifi_mode",
+        translation_key="wifi_mode",
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:wifi",
         extra_attributes=[
@@ -26,6 +27,7 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
     ),
     WiCANSensorEntityDescription(
         key="batt_voltage",
+        translation_key="batt_voltage",
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:car-battery",
         device_class=SensorDeviceClass.VOLTAGE,
@@ -40,6 +42,7 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
     ),
     WiCANSensorEntityDescription(
         key="vpn_status",
+        translation_key="vpn_status",
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:shield-key",
         extra_attributes=[
@@ -51,7 +54,7 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
 BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
     WiCANBinarySensorEntityDescription(
         key="ble_status",
-        name="Bluetooth Enabled",
+        translation_key="ble_status",
         icon="mdi:bluetooth",
         entity_category=EntityCategory.DIAGNOSTIC,
         extra_attributes=[
@@ -60,7 +63,7 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
     ),
     WiCANBinarySensorEntityDescription(
         key="ecu_status",
-        name="ECU Online",
+        translation_key="ecu_status",
         icon="mdi:car-connected",
         entity_category=EntityCategory.DIAGNOSTIC,
         extra_attributes=[

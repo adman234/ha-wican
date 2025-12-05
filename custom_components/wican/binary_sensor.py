@@ -44,11 +44,14 @@ async def async_setup_entry(
 class WiCANBinarySensorEntity(WiCANEntity, BinarySensorEntity, RestoreEntity):
     """A binary sensor entity."""
 
+    __slots__ = ("_attr_is_on",)
+
     entity_description: WiCANBinarySensorEntityDescription
 
     def __init__(self, config_entry, entity_description):
         super().__init__(config_entry, entity_description)
         self._attr_unique_id = f"{config_entry.entry_id}_{entity_description.key}"
+        self._attr_is_on = None
 
     @callback
     def _async_handle_event(self, webhook_id: str, data) -> None:
