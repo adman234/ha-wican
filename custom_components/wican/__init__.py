@@ -334,7 +334,30 @@ async def _async_register_webhook_on_device(
     payload = {"url": webhook_url, "enabled": True, "interval": post_interval}
 
     # Build endpoint candidates: prefer direct host/IP over mDNS
+    # Use cached resolved IP if available and fresh (< 5 minutes old)
+    import time
+    CACHE_DURATION = 300  # 5 minutes
+    
     endpoints: list[URL] = []
+    
+    # Check if we have a cached IP and it's still valid
+    if (
+        entry.runtime_data.cached_resolved_ip
+        and entry.runtime_data.cache_timestamp
+        and (time.time() - entry.runtime_data.cache_timestamp) < CACHE_DURATION
+    ):
+        cached_endpoint = _build_webhook_endpoint(
+            f"http://{entry.runtime_data.cached_resolved_ip}"
+        )
+        if cached_endpoint:
+            endpoints.append(cached_endpoint)
+            _LOGGER.debug(
+                "Using cached IP %s (age: %.1fs)",
+                entry.runtime_data.cached_resolved_ip,
+                time.time() - entry.runtime_data.cache_timestamp,
+            )
+    
+    # Add host and mDNS as fallback
     for candidate in (host, mdns):
         endpoint = _build_webhook_endpoint(candidate)
         if endpoint:
@@ -373,6 +396,24 @@ async def _async_register_webhook_on_device(
                                 attempt + 1,
                                 max_retries,
                             )
+                            
+                            # Cache the successful IP for future registrations
+                            try:
+                                import time
+                                # Extract IP from endpoint URL
+                                endpoint_host = ep.host
+                                if endpoint_host and not endpoint_host.endswith(".local"):
+                                    entry.runtime_data.cached_resolved_ip = endpoint_host
+                                    entry.runtime_data.cache_timestamp = time.time()
+                                    _LOGGER.debug(
+                                        "Cached resolved IP: %s",
+                                        endpoint_host,
+                                    )
+                            except Exception as cache_err:
+                                _LOGGER.debug(
+                                    "Failed to cache IP: %s", cache_err
+                                )
+                            
                             return True
 
                         text = await resp.text()
