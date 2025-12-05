@@ -365,3 +365,110 @@ async def test_pid_sensor_empty_pids_dict(
     await hass.async_block_till_done()
     await coordinator.async_request_refresh()
     await hass.async_block_till_done()
+
+
+async def test_pid_sensor_real_world_data_format(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test PID sensors with real-world WiCAN webhook data format."""
+    mock_config_entry.add_to_hass(hass)
+    
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    
+    # Real-world data format from actual WiCAN device
+    webhook_data = {
+        "config": {
+            "ENGINE_RPM": {"class": "frequency", "unit": "RPM"},
+            "SPEED": {"class": "speed", "unit": "km/h"},
+            "COOLANT_TMP": {"class": "temperature", "unit": "°C"},
+            "FUEL": {"class": "none", "unit": "%"},
+            "INTAKE_AIR_TMP": {"class": "temperature", "unit": "°C"},
+            "THROTTLE": {"class": "none", "unit": "%"},
+            "MAF": {"class": "none", "unit": "g/s"},
+            "FUEL_PRESSURE": {"class": "pressure", "unit": "kPa"},
+            "0C-EngineRPM": {"class": "speed", "unit": "rpm"},
+            "0D-VehicleSpeed": {"class": "speed", "unit": "km/h"},
+        },
+        "autopid_data": {
+            "ENGINE_RPM": 4300,
+            "SPEED": 26,
+            "COOLANT_TMP": 162,
+            "FUEL": 62.35,
+            "INTAKE_AIR_TMP": -40,
+            "THROTTLE": 53.33,
+            "MAF": 12.28,
+            "FUEL_PRESSURE": 300,
+            "0C-EngineRPM": 4300,
+            "0D-VehicleSpeed": 26,
+        }
+    }
+    
+    # Send webhook
+    coordinator = mock_config_entry.runtime_data.coordinator
+    coordinator.handle_webhook_data(webhook_data)
+    async_dispatcher_send(hass, "wican", "test_webhook_id", webhook_data)
+    await hass.async_block_till_done()
+    await coordinator.async_request_refresh()
+    await hass.async_block_till_done()
+    
+    # Verify critical sensors were created with correct values
+    entity_reg = er.async_get(hass)
+    
+    # ENGINE_RPM sensor
+    rpm_entity = entity_reg.async_get("sensor.wican_device_engine_rpm")
+    assert rpm_entity is not None
+    rpm_state = hass.states.get("sensor.wican_device_engine_rpm")
+    assert rpm_state.state == "4300"
+    assert rpm_state.attributes.get("unit_of_measurement") == "RPM"
+    # Note: "frequency" class should be normalized to None or valid HA device class
+    
+    # SPEED sensor
+    speed_entity = entity_reg.async_get("sensor.wican_device_speed")
+    assert speed_entity is not None
+    speed_state = hass.states.get("sensor.wican_device_speed")
+    assert speed_state.state == "26"
+    assert speed_state.attributes.get("unit_of_measurement") == "km/h"
+    assert speed_state.attributes.get("device_class") == "speed"
+    
+    # COOLANT_TMP sensor
+    coolant_entity = entity_reg.async_get("sensor.wican_device_coolant_tmp")
+    assert coolant_entity is not None
+    coolant_state = hass.states.get("sensor.wican_device_coolant_tmp")
+    assert coolant_state.state == "162"
+    assert coolant_state.attributes.get("unit_of_measurement") == "°C"
+    assert coolant_state.attributes.get("device_class") == "temperature"
+    
+    # FUEL sensor (class="none" should normalize to None)
+    fuel_entity = entity_reg.async_get("sensor.wican_device_fuel")
+    assert fuel_entity is not None
+    fuel_state = hass.states.get("sensor.wican_device_fuel")
+    assert fuel_state.state == "62.35"
+    assert fuel_state.attributes.get("unit_of_measurement") == "%"
+    # device_class should be None since "none" is not a valid HA device class
+    
+    # FUEL_PRESSURE sensor
+    pressure_entity = entity_reg.async_get("sensor.wican_device_fuel_pressure")
+    assert pressure_entity is not None
+    pressure_state = hass.states.get("sensor.wican_device_fuel_pressure")
+    assert pressure_state.state == "300"
+    assert pressure_state.attributes.get("unit_of_measurement") == "kPa"
+    assert pressure_state.attributes.get("device_class") == "pressure"
+    
+    # 0C-EngineRPM sensor (with special chars in name)
+    # Note: device_class="speed" with unit="rpm" is invalid, so it gets normalized to None
+    obd_rpm_entity = entity_reg.async_get("sensor.wican_device_0c_enginerpm")
+    assert obd_rpm_entity is not None
+    obd_rpm_state = hass.states.get("sensor.wican_device_0c_enginerpm")
+    assert obd_rpm_state.state == "4300"
+    assert obd_rpm_state.attributes.get("unit_of_measurement") == "rpm"
+    # device_class is None because speed+rpm is an invalid combination
+    assert obd_rpm_state.attributes.get("device_class") is None
+    
+    # Verify config was persisted to entry
+    updated_entry = hass.config_entries.async_get_entry(mock_config_entry.entry_id)
+    assert "ENGINE_RPM" in updated_entry.data.get("pid_keys", [])
+    assert "SPEED" in updated_entry.data.get("pid_keys", [])
+    assert "COOLANT_TMP" in updated_entry.data.get("pid_keys", [])
+    assert "0C-EngineRPM" in updated_entry.data.get("pid_keys", [])
