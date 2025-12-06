@@ -172,6 +172,7 @@ async def async_setup_entry(
         _LOGGER.info("Received WiCAN webhook: %s", webhook_id)
         try:
             data = await request.json()
+            _LOGGER.debug("Webhook payload: %s", data)
         except vol.MultipleInvalid as error:
             return Response(
                 text=error.error_message, status=HTTPStatus.UNPROCESSABLE_ENTITY
@@ -190,8 +191,10 @@ async def async_setup_entry(
         if remote_ip:
             entry.runtime_data.device_ip = remote_ip
             device_info_fields["ip"] = remote_ip
+            # Don't set host from IP if we already have a hostname
+            # (avoid triggering re-registration when IP resolves to stored hostname)
             host_from_ip = _http_url_from_host(remote_ip)
-            if host_from_ip:
+            if host_from_ip and not entry.data.get("host"):
                 entry.runtime_data.device_host = host_from_ip
                 device_info_fields["host"] = host_from_ip
 
@@ -201,12 +204,15 @@ async def async_setup_entry(
             connection_field_changed = False
             data_changed = False
             for key, value in device_info_fields.items():
-                if value is None:
+                if value is None or value == "":
+                    # Skip empty values - don't overwrite with empty
                     continue
+                # Skip if value hasn't actually changed
                 if new_data.get(key) == value:
                     continue
                 new_data[key] = value
                 data_changed = True
+                # Only mark as connection change if host/ip/mdns actually changed
                 if key in {"host", "ip", "mdns"}:
                     connection_field_changed = True
 
@@ -216,6 +222,10 @@ async def async_setup_entry(
                     entry.runtime_data.device_host = new_data.get("host") or entry.runtime_data.device_host
                     entry.runtime_data.device_ip = new_data.get("ip") or entry.runtime_data.device_ip
                     # Refresh registration out-of-band so future retries use the new address
+                    _LOGGER.info(
+                        "Connection info changed for %s, re-registering webhook",
+                        entry.title,
+                    )
                     hass.async_create_task(
                         _async_register_webhook_on_device(hass, entry)
                     )
@@ -242,6 +252,10 @@ async def async_setup_entry(
         hass, DOMAIN, entry.title, webhook_id, handle_webhook
     )
 
+    # Normalize host/mdns schemes BEFORE scheduling registration
+    # to avoid triggering update listener which would cause duplicate registrations
+    _normalize_connection_urls(hass, entry)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     _schedule_webhook_registration(hass, entry)
@@ -257,6 +271,35 @@ async def async_unload_entry(
     """Unload a config entry."""
     webhook.async_unregister(hass, entry.runtime_data.webhook_id)
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+def _normalize_connection_urls(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
+    """Normalize host/mdns URLs by ensuring they have http:// scheme.
+    
+    This is done once during setup to avoid triggering update listener
+    which would cause duplicate webhook registrations.
+    """
+    updated_data = dict(entry.data)
+    data_changed = False
+    
+    # Normalize mdns
+    mdns = updated_data.get("mdns")
+    if mdns:
+        normalized_mdns = _ensure_http_scheme(mdns)
+        if normalized_mdns != mdns:
+            updated_data["mdns"] = normalized_mdns
+            data_changed = True
+    
+    # Normalize host
+    host = updated_data.get("host")
+    if host:
+        normalized_host = _ensure_http_scheme(host)
+        if normalized_host != host:
+            updated_data["host"] = normalized_host
+            data_changed = True
+    
+    if data_changed:
+        hass.config_entries.async_update_entry(entry, data=updated_data)
 
 
 def _schedule_webhook_registration(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
@@ -289,29 +332,13 @@ async def _async_register_webhook_on_device(
         )
         return False
 
-    # Normalize schemes on available addresses
-    if mdns:
-        normalized_mdns = _ensure_http_scheme(mdns)
-        if normalized_mdns != mdns:
-            updated_data = dict(entry.data)
-            updated_data["mdns"] = normalized_mdns
-            hass.config_entries.async_update_entry(entry, data=updated_data)
-            mdns = normalized_mdns
+    # URLs already normalized during setup, just ensure runtime_data is updated
     if host:
-        normalized_host = _ensure_http_scheme(host)
-        if normalized_host != host:
-            updated_data = dict(entry.data)
-            updated_data["host"] = normalized_host
-            hass.config_entries.async_update_entry(entry, data=updated_data)
-            host = normalized_host
         entry.runtime_data.device_host = host
-    elif ip:
-        # Ensure we persist the derived host for future reloads
+    elif ip and not host:
+        # Derive host from IP if needed
         derived_host = _http_url_from_host(ip)
         if derived_host:
-            updated_data = dict(entry.data)
-            updated_data["host"] = derived_host
-            hass.config_entries.async_update_entry(entry, data=updated_data)
             host = derived_host
             entry.runtime_data.device_host = derived_host
 

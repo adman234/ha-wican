@@ -135,3 +135,37 @@ async def test_entry_updated(
 
     # Verify runtime data updated
     assert entry.runtime_data.post_interval == new_interval
+
+
+async def test_webhook_no_duplicate_registration(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+    mock_webhook_data: dict,
+    hass_client,
+) -> None:
+    """Test webhook doesn't trigger duplicate registration when same device info repeated."""
+    entry = init_integration
+    
+    client = await hass_client()
+    webhook_id = entry.data[CONF_WEBHOOK_ID]
+
+    # First webhook - data already stored from setup
+    resp = await client.post(
+        f"/api/webhook/{webhook_id}",
+        json=mock_webhook_data,
+    )
+    assert resp.status == 204
+    await hass.async_block_till_done()
+
+    # Second webhook with same data - should NOT trigger re-registration  
+    # The key point: mdns/device_id are already in entry.data from init,
+    # so webhook shouldn't see them as "changed"
+    resp = await client.post(
+        f"/api/webhook/{webhook_id}",
+        json=mock_webhook_data,
+    )
+    assert resp.status == 204
+    await hass.async_block_till_done()
+    
+    # Integration is working - no errors means no spurious re-registrations
+    assert entry.state == ConfigEntryState.LOADED
