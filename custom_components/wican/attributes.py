@@ -48,6 +48,12 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
         extra_attributes=[
             "vpn_ip",
         ],
+    ),
+    WiCANSensorEntityDescription(
+        key="uptime",
+        translation_key="uptime",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:clock-outline",
     )
 )
 

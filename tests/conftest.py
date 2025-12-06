@@ -66,6 +66,7 @@ def mock_webhook_data() -> dict:
             "ecu_status": "Online",
             "loop_status": "Stopped",
             "device_id": "test_device_123",
+            "uptime": "01:00:00",
         },
         "pids": {
             "pid_0x0c": {

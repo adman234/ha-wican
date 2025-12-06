@@ -35,6 +35,10 @@ async def test_sensor_entities_created(
     assert vpn_status is not None
     assert vpn_status.unique_id.endswith("_vpn_status")
 
+    uptime = entity_registry.async_get("sensor.wican_device_uptime")
+    assert uptime is not None
+    assert uptime.unique_id.endswith("_uptime")
+
 
 async def test_sensor_states_update_from_webhook(
     hass: HomeAssistant,
@@ -65,6 +69,10 @@ async def test_sensor_states_update_from_webhook(
     vpn_status_state = hass.states.get("sensor.wican_device_vpn_status")
     assert vpn_status_state is not None
     assert vpn_status_state.state == "Not Connected"
+
+    uptime_state = hass.states.get("sensor.wican_device_uptime")
+    assert uptime_state is not None
+    assert uptime_state.state == "01:00:00"
 
 
 async def test_pid_sensor_entities_created(
