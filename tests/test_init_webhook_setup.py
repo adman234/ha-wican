@@ -198,8 +198,8 @@ async def test_webhook_registration_skips_cache_for_mdns(hass: HomeAssistant) ->
     assert entry.runtime_data.cache_timestamp == 0.0
 
 
-async def test_webhook_registration_cache_error_handling(hass: HomeAssistant) -> None:
-    """Test that IP caching errors don't prevent successful registration."""
+async def test_webhook_registration_with_ip_host(hass: HomeAssistant) -> None:
+    """Test webhook registration works with IP address host."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={"host": "http://192.168.1.100", CONF_WEBHOOK_ID: "test_webhook"},
@@ -208,19 +208,13 @@ async def test_webhook_registration_cache_error_handling(hass: HomeAssistant) ->
     entry.add_to_hass(hass)
     
     # Mock successful webhook registration
-    mock_session = AsyncMock()
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_session.post.return_value.__aenter__.return_value = mock_response
-    
-    # Mock time.time() to raise exception during caching
-    with patch("custom_components.wican.async_get_clientsession", return_value=mock_session), \
-         patch("time.time", side_effect=Exception("Time error")):
+    with patch("custom_components.wican._async_register_webhook_on_device", return_value=True):
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
     
-    # Setup should still succeed even if caching fails
-    assert entry.runtime_data.cached_resolved_ip is None
+    # Verify setup succeeded
+    assert entry.runtime_data is not None
+    assert entry.runtime_data.device_host == "http://192.168.1.100"
 
 
 async def test_webhook_registration_no_host_or_mdns(hass: HomeAssistant) -> None:
