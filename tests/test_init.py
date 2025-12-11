@@ -169,3 +169,12 @@ async def test_webhook_no_duplicate_registration(
     
     # Integration is working - no errors means no spurious re-registrations
     assert entry.state == ConfigEntryState.LOADED
+
+
+
+
+
+
+
+
+

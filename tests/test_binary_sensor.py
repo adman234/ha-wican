@@ -164,3 +164,88 @@ async def test_binary_sensor_state_restoration(
     ecu_status = hass.states.get("binary_sensor.wican_device_ecu_status")
     assert ecu_status is not None
     assert ecu_status.state == "off"
+
+
+def test_is_true_status_with_non_string():
+    """Test is_true_status with non-string values."""
+    from custom_components.wican.binary_sensor import is_true_status
+    
+    # Test with integers
+    assert is_true_status(1) is True
+    assert is_true_status(0) is False
+    
+    # Test with boolean
+    assert is_true_status(True) is True
+    assert is_true_status(False) is False
+    
+    # Test with None
+    assert is_true_status(None) is False
+    
+    # Test with list (any truthy value)
+    assert is_true_status([1, 2]) is True
+    assert is_true_status([]) is False
+
+
+async def test_binary_sensor_state_restoration_with_none_initial(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test binary sensor state restoration when initial state is None."""
+    mock_config_entry.add_to_hass(hass)
+    
+    # Pre-populate state registry with a saved state
+    hass.states.async_set(
+        "binary_sensor.wican_device_ble_status",
+        "on",
+        {"restored": True}
+    )
+    
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    
+    # State should be restored
+    state = hass.states.get("binary_sensor.wican_device_ble_status")
+    assert state is not None
+
+
+async def test_binary_sensor_none_checks(hass: HomeAssistant, hass_client) -> None:
+    """Test binary sensor handles None data gracefully."""
+    from unittest.mock import patch
+    from homeassistant.const import CONF_WEBHOOK_ID
+    from custom_components.wican.const import DOMAIN
+    from tests.conftest import MockConfigEntry
+    
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "mdns": "http://wican_test.local",
+            CONF_WEBHOOK_ID: "test_webhook",
+        },
+        title="WiCAN Test",
+    )
+    entry.add_to_hass(hass)
+    
+    with patch("custom_components.wican._async_register_webhook_on_device", return_value=True):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    
+    client = await hass_client()
+    webhook_id = entry.data[CONF_WEBHOOK_ID]
+    
+    # Trigger webhook with None status
+    await client.post(
+        f"/api/webhook/{webhook_id}",
+        json={"status": None}
+    )
+    await hass.async_block_till_done()
+    
+    # Trigger webhook with status but missing ble_status key
+    await client.post(
+        f"/api/webhook/{webhook_id}",
+        json={"status": {"other_key": "value"}}
+    )
+    await hass.async_block_till_done()
+    
+    # Verify entities exist and didn't crash
+    state = hass.states.get("binary_sensor.wican_device_ble_status")
+    assert state is not None

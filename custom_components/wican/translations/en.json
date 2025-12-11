@@ -46,6 +46,11 @@
         "ecu_status": {
           "name": "ECU Online"
         }
+      },
+      "device_tracker": {
+        "location": {
+          "name": "Location"
+        }
       }
     }
   }

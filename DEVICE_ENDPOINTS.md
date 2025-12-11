@@ -53,9 +53,24 @@
     {
       "status": { /* same keys as GET /api/status */ },
       "autopid_data": { /* PID values */ },
-      "config": { /* PID config */ }
+      "config": { /* PID config */ },
+      "gps": {
+        "latitude": 37.7749,
+        "longitude": -122.4194,
+        "accuracy": 10,
+        "altitude": 25.5,
+        "speed": 15.3,
+        "heading": 180
+      }
     }
     ```
+  - GPS fields (all optional):
+    - `latitude` (float, -90 to 90): Latitude in decimal degrees
+    - `longitude` (float, -180 to 180): Longitude in decimal degrees
+    - `accuracy` (int): GPS fix accuracy in meters
+    - `altitude` (float): Altitude above sea level in meters
+    - `speed` (float): Ground speed in meters per second
+    - `heading` (float): Heading/bearing in degrees (0-360)
   - Update metrics: `last_post`, `status` ("ok" or error), `retries`.
 
 ## Security (optional)

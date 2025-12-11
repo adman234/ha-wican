@@ -217,3 +217,147 @@ async def test_coordinator_fallback_polling(
 
     # Data should remain the same (push-based, no polling fetch)
     assert coordinator.data == initial_data
+
+
+async def test_coordinator_first_device_id_acceptance(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test coordinator accepts device_id on first webhook (no stored device_id)."""
+    # Create config entry without device_id
+    config_entry = MockConfigEntry(
+        domain="wican",
+        data={
+            "host": "wican_test.local",
+            "webhook_id": "test_webhook_new",
+            # No device_id in config
+        },
+        title="WiCAN Device",
+        unique_id="test_unique_new",
+    )
+    config_entry.add_to_hass(hass)
+    
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    
+    # Allow webhook registration to complete
+    import asyncio
+    await asyncio.sleep(0.1)
+    
+    # Send webhook with device_id for the first time
+    webhook_data = {
+        "status": {"device_id": "new_device_abc123"},
+        "bus": "0",
+        "type": "rx",
+        "ts": 12345,
+        "frame": []
+    }
+    
+    coordinator = config_entry.runtime_data.coordinator
+    # This should not raise an error - first time device_id is accepted
+    coordinator.handle_webhook_data(webhook_data)
+    
+    # Verify data was stored
+    assert coordinator.data.get("status", {}).get("device_id") == "new_device_abc123"
+
+
+async def test_coordinator_normalize_numeric_strings(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test coordinator normalize_sensor_value with numeric strings."""
+    mock_config_entry.add_to_hass(hass)
+    
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    
+    coordinator = mock_config_entry.runtime_data.coordinator
+    
+    # Test integer string
+    assert coordinator.normalize_sensor_value("test", "123") == 123
+    
+    # Test float string  
+    assert coordinator.normalize_sensor_value("test", "45.67") == 45.67
+    
+    # Test negative numbers
+    assert coordinator.normalize_sensor_value("test", "-89") == -89
+    assert coordinator.normalize_sensor_value("test", "-12.34") == -12.34
+    
+    # Test non-numeric string fallback
+    assert coordinator.normalize_sensor_value("test", "not_a_number") == "not_a_number"
+    assert coordinator.normalize_sensor_value("test", "12.34.56") == "12.34.56"
+
+
+async def test_coordinator_get_sensor_value(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test coordinator get_sensor_value method."""
+    mock_config_entry.add_to_hass(hass)
+    
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    
+    coordinator = mock_config_entry.runtime_data.coordinator
+    
+    # Add some data
+    webhook_data = {
+        "status": {"wifi_mode": "Station", "batt_voltage": "13.2V"},
+        "bus": "0",
+        "type": "rx",
+        "ts": 12345,
+        "frame": []
+    }
+    coordinator.handle_webhook_data(webhook_data)
+    
+    # Test get_sensor_value method
+    assert coordinator.get_sensor_value("status") is not None
+    assert coordinator.get_sensor_value("bus") == "0"
+    assert coordinator.get_sensor_value("nonexistent") is None
+
+
+async def test_coordinator_numeric_string_conversion_edge_cases(
+    hass: HomeAssistant,
+    hass_client,
+) -> None:
+    """Test coordinator handles numeric string edge cases."""
+    from unittest.mock import patch
+    from homeassistant.const import CONF_WEBHOOK_ID
+    from custom_components.wican.const import DOMAIN
+    from tests.conftest import MockConfigEntry
+    
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "mdns": "http://wican_test.local",
+            CONF_WEBHOOK_ID: "test_webhook",
+        },
+        title="WiCAN Test",
+    )
+    entry.add_to_hass(hass)
+    
+    with patch("custom_components.wican._async_register_webhook_on_device", return_value=True):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    
+    client = await hass_client()
+    webhook_id = entry.data[CONF_WEBHOOK_ID]
+    
+    # Test invalid numeric string conversion
+    await client.post(
+        f"/api/webhook/{webhook_id}",
+        json={
+            "status": {
+                "wifi_mode": "123.456.789",  # Looks numeric but invalid float
+                "batt_voltage": "12.5"  # Valid float
+            }
+        }
+    )
+    await hass.async_block_till_done()
+    
+    # Verify entities handled the data
+    state = hass.states.get("sensor.wican_device_wifi_mode")
+    assert state is not None
+
+
+

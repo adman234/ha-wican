@@ -18,3 +18,10 @@ IP_CACHE_DURATION = 300  # 5 minutes in seconds
 
 # mDNS Resolution
 MDNS_RESOLUTION_TIMEOUT = 5  # seconds
+
+# GPS / Location Tracking
+GPS_ACCURACY_THRESHOLD = 200  # meters - filter out low accuracy GPS fixes
+MIN_GPS_LATITUDE = -90.0
+MAX_GPS_LATITUDE = 90.0
+MIN_GPS_LONGITUDE = -180.0
+MAX_GPS_LONGITUDE = 180.0

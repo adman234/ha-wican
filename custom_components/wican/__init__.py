@@ -37,7 +37,7 @@ from .exceptions import WiCANConnectionError, WiCANWebhookError
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.DEVICE_TRACKER]
 
 # Type alias for config entry with runtime data
 WiCANConfigEntry = ConfigEntry[WiCANRuntimeData]

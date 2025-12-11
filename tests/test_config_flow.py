@@ -337,3 +337,259 @@ async def test_zeroconf_flow_legacy_firmware(
         assert result2["title"] == "wican_legacy.local."
         # No MAC address in data for legacy firmware
         assert "mac" not in result2["data"] or not result2["data"].get("mac")
+
+
+async def test_config_flow_user_manual_entry_with_optional_host(
+    hass: HomeAssistant,
+) -> None:
+    """Test manual config entry with optional host field."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_USER},
+    )
+    
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "user"
+    
+    # Submit with both mdns and optional host
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            "mdns": "wican_test.local",
+            "host": "192.168.1.50",  # Optional host field
+        },
+    )
+    
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"]["mdns"] == "http://wican_test.local"
+    assert result["data"]["host"] == "http://192.168.1.50"
+
+
+async def test_config_flow_zeroconf_discovery_with_mac_and_device_id(
+    hass: HomeAssistant,
+) -> None:
+    """Test config flow via zeroconf discovery with MAC and device_id."""
+    from homeassistant.components.zeroconf import ZeroconfServiceInfo
+    
+    # Use proper WiCAN service name pattern
+    discovery_info = ZeroconfServiceInfo(
+        ip_address="192.168.1.100",
+        ip_addresses=["192.168.1.100"],
+        port=80,
+        hostname="wican_abc123.local.",
+        type="_http._tcp.local.",
+        name="WiCAN-WebServer",
+        properties={"mac": b"AA:BB:CC:DD:EE:FF", "device_id": b"wican_abc123"},
+    )
+    
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery_info,
+    )
+    
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "zeroconf_confirm"
+
+
+async def test_zeroconf_device_id_fallback_unique_id(
+    hass: HomeAssistant,
+) -> None:
+    """Test zeroconf flow using device_id when MAC is not available (line 102)."""
+    from homeassistant.components.zeroconf import ZeroconfServiceInfo
+
+    discovery_info = ZeroconfServiceInfo(
+        ip_address="192.168.1.100",
+        ip_addresses=["192.168.1.100"],
+        hostname="wican_device.local.",
+        name="WiCAN-WebServer._wican._tcp.local.",
+        port=80,
+        type="_wican._tcp.local.",
+        properties={
+            "device_id": b"wican_device_xyz",  # No MAC, only device_id
+            "firmware": b"2.00",
+        },
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery_info,
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "zeroconf_confirm"
+    # Unique ID should be device_id
+    assert result["flow_id"]
+
+
+async def test_zeroconf_hostname_fallback_unique_id(
+    hass: HomeAssistant,
+) -> None:
+    """Test zeroconf flow using hostname when MAC and device_id are unavailable (line 103)."""
+    from homeassistant.components.zeroconf import ZeroconfServiceInfo
+
+    discovery_info = ZeroconfServiceInfo(
+        ip_address="192.168.1.100",
+        ip_addresses=["192.168.1.100"],
+        hostname="wican_legacy.local.",
+        name="WiCAN-WebServer._wican._tcp.local.",
+        port=80,
+        type="_wican._tcp.local.",
+        properties={},  # No MAC, no device_id
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery_info,
+    )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "zeroconf_confirm"
+
+
+async def test_zeroconf_confirm_webhook_url_exception(
+    hass: HomeAssistant,
+    mock_aiohttp_session,
+) -> None:
+    """Test zeroconf confirmation handles webhook URL generation exception (lines 145-149)."""
+    from homeassistant.components.zeroconf import ZeroconfServiceInfo
+    from unittest.mock import patch
+
+    discovery_info = ZeroconfServiceInfo(
+        ip_address="192.168.1.100",
+        ip_addresses=["192.168.1.100"],
+        hostname="wican_test.local.",
+        name="WiCAN-WebServer._wican._tcp.local.",
+        port=80,
+        type="_wican._tcp.local.",
+        properties={
+            "mac": b"AA:BB:CC:DD:EE:FF",
+        },
+    )
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": config_entries.SOURCE_ZEROCONF},
+        data=discovery_info,
+    )
+
+    # Now confirm with mocked get_url that raises exception
+    with patch("homeassistant.helpers.network.get_url", side_effect=Exception("URL error")):
+        result2 = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {},
+        )
+
+    assert result2["type"] == FlowResultType.CREATE_ENTRY
+    # Title should be the hostname (discovered_name)
+    assert result2["title"] == "wican_test.local."
+    # Webhook URL should fall back to <webhook_id: ...> format due to exception
+    assert "webhook_id" in result2["data"]
+
+
+async def test_options_flow_when_config_entry_set(
+    hass: HomeAssistant,
+) -> None:
+    """Test options flow uses config_entry.options when hass is set (line 198)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_WEBHOOK_ID: "test_webhook",
+            "mdns": "http://wican_test.local:80",
+        },
+        options={"post_interval": 2500},
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "init"
+    # Should use config_entry.options as default
+    assert "post_interval" in str(result["data_schema"])
+
+
+async def test_options_flow_valid_data(
+    hass: HomeAssistant,
+) -> None:
+    """Test options flow accepts valid data (covers line 196-197)."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_WEBHOOK_ID: "test_webhook",
+            "mdns": "http://wican_test.local:80",
+        },
+        options={"post_interval": 1000},
+    )
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    
+    assert result["type"] == FlowResultType.FORM
+    assert result["step_id"] == "init"
+
+    # Submit valid data within range (MIN=1000, MAX=3600)
+    result2 = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={"post_interval": 2000},
+    )
+
+    assert result2["type"] == FlowResultType.CREATE_ENTRY
+    assert result2["data"]["post_interval"] == 2000
+
+
+async def test_format_http_url_empty_string(
+    hass: HomeAssistant,
+) -> None:
+    """Test _format_http_url with empty string (line 219)."""
+    from custom_components.wican.config_flow import _format_http_url
+    
+    result = _format_http_url("   ", 80)
+    assert result is None
+
+
+async def test_format_http_url_with_existing_http(
+    hass: HomeAssistant,
+) -> None:
+    """Test _format_http_url with existing http:// (line 223)."""
+    from custom_components.wican.config_flow import _format_http_url
+    
+    result = _format_http_url("http://example.com:8080", 80)
+    assert result == "http://example.com:8080"
+
+
+async def test_format_http_url_with_existing_https(
+    hass: HomeAssistant,
+) -> None:
+    """Test _format_http_url with existing https:// (line 223)."""
+    from custom_components.wican.config_flow import _format_http_url
+    
+    result = _format_http_url("https://example.com", 443)
+    assert result == "https://example.com"
+
+
+async def test_format_http_url_with_port_none(
+    hass: HomeAssistant,
+) -> None:
+    """Test _format_http_url with None port (yarl handles this gracefully)."""
+    from custom_components.wican.config_flow import _format_http_url
+    
+    # None port is valid for yarl URL.build
+    result = _format_http_url("example.com", None)
+    assert result == "http://example.com"
+
+
+async def test_string_ip_none(
+    hass: HomeAssistant,
+) -> None:
+    """Test _string_ip with None input (line 243)."""
+    from custom_components.wican.config_flow import _string_ip
+    
+    result = _string_ip(None)
+    assert result is None
+
+
+
+

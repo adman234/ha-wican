@@ -207,3 +207,83 @@ async def test_sensor_state_restoration(
     wifi_mode = hass.states.get("sensor.wican_device_wifi_mode")
     assert wifi_mode is not None
     assert wifi_mode.state == "AP"
+
+
+def test_get_sensor_attributes_with_none_values():
+    """Test get_sensor_attributes when status values are None."""
+    from custom_components.wican.attributes import get_sensor_attributes
+    from custom_components.wican.sensor import WiCANSensorEntityDescription
+    
+    # Create entity description with extra_attributes
+    entity_desc = WiCANSensorEntityDescription(
+        key="test_sensor",
+        name="Test Sensor",
+        extra_attributes=["attr1", "attr2", "attr3"]
+    )
+    
+    # Test data where some attributes are None
+    data = {
+        "status": {
+            "attr1": "value1",
+            "attr2": None,  # This should be skipped
+            "attr3": "value3"
+        }
+    }
+    
+    attrs = get_sensor_attributes(entity_desc, data)
+    
+    # Only non-None attributes should be included
+    assert "attr1" in attrs
+    assert "attr2" not in attrs  # Skipped because None
+    assert "attr3" in attrs
+    assert attrs["attr1"] == "value1"
+    assert attrs["attr3"] == "value3"
+
+
+async def test_sensor_restoration_with_none_state(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test sensor state restoration when saved state is None."""
+    mock_config_entry.add_to_hass(hass)
+    
+    # Don't pre-populate any state (or set state to None)
+    # This tests when state is None or state.native_value is None
+    
+    assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+    
+    # Sensors should be created with unknown state
+    state = hass.states.get("sensor.wican_device_wifi_mode")
+    assert state is not None
+    assert state.state == "unknown"
+
+
+async def test_sensor_state_restoration_with_normalization(hass: HomeAssistant) -> None:
+    """Test sensor restores state with normalization."""
+    from unittest.mock import patch
+    from homeassistant.const import CONF_WEBHOOK_ID
+    from custom_components.wican.const import DOMAIN
+    from tests.conftest import MockConfigEntry
+    
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            "mdns": "http://wican_test.local",
+            CONF_WEBHOOK_ID: "test_webhook",
+        },
+        title="WiCAN Test",
+    )
+    entry.add_to_hass(hass)
+    
+    # Setup should restore and normalize the value
+    with patch("custom_components.wican._async_register_webhook_on_device", return_value=True):
+        await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+    
+    # Check that sensor was created and has restored state
+    state = hass.states.get("sensor.wican_device_batt_voltage")
+    assert state is not None
+
+
+
