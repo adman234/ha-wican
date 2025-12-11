@@ -13,3 +13,8 @@ bruno/
 
 # Python virtual environment
 .venv/
+
+# Documentation files
+# Exclude all .md files except README.md
+*.md
+!README.md
