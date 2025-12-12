@@ -3,7 +3,11 @@
       "step": {
         "user": {
           "title": "Set up WiCAN",
-          "description": "Are you sure you want to set up the WiCAN integration?"
+          "description": "WiCAN devices are usually discovered automatically. Use manual setup only if automatic discovery failed.\n\nEnter the hostname or IP address of your WiCAN device.",
+          "data": {
+            "mdns": "Hostname or IP address",
+            "host": "Alternative IP (optional)"
+          }
         },
         "zeroconf_confirm": {
           "title": "Discovered WiCAN device",
