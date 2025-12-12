@@ -27,13 +27,6 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-config_entry_flow.register_webhook_flow(
-    DOMAIN,
-    "WiCAN",
-    {"docs_url": "https://meatpihq.github.io/wican-fw/"},
-    allow_multiple=True,
-)
-
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for WiCAN discovery via Zeroconf."""
