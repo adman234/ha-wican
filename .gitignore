@@ -13,3 +13,6 @@ bruno/
 
 # Python virtual environment
 .venv/
+
+*.md
+!README.md
