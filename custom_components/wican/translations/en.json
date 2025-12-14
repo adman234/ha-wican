@@ -55,6 +55,28 @@
         "location": {
           "name": "Location"
         }
+      },
+      "update": {
+        "firmware": {
+          "name": "Firmware"
+        }
+      }
+    },
+    "exceptions": {
+      "firmware_download_failed": {
+        "message": "Failed to download firmware from GitHub: {error}"
+      },
+      "firmware_upload_failed": {
+        "message": "Failed to upload firmware to device: {error}"
+      },
+      "version_not_found": {
+        "message": "Firmware version {version} not found in GitHub releases"
+      },
+      "device_unreachable": {
+        "message": "Cannot reach device at {host} for firmware update"
+      },
+      "update_in_progress": {
+        "message": "A firmware update is already in progress"
       }
     }
   }

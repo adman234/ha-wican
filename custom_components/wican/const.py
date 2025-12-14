@@ -25,3 +25,19 @@ MIN_GPS_LATITUDE = -90.0
 MAX_GPS_LATITUDE = 90.0
 MIN_GPS_LONGITUDE = -180.0
 MAX_GPS_LONGITUDE = 180.0
+
+# GitHub API
+GITHUB_API_RELEASES_URL = "https://api.github.com/repos/{owner}/{repo}/releases"
+GITHUB_OWNER = "meatpiHQ"
+GITHUB_REPO = "wican-fw"
+
+# Firmware Update
+FIRMWARE_DOWNLOAD_TIMEOUT = 120  # 2 minutes to download from GitHub
+FIRMWARE_UPLOAD_TIMEOUT = 180  # 3 minutes to upload to device
+GITHUB_API_TIMEOUT = 30  # seconds for GitHub API requests
+FIRMWARE_UPDATE_REBOOT_DELAY = 2  # seconds to wait before refreshing after update
+OTA_ENDPOINT = "/upload/ota.bin"
+OTA_FORM_FIELD = "ota_file"
+
+# Update Coordinator
+GITHUB_RELEASES_UPDATE_INTERVAL = 3600  # 1 hour
