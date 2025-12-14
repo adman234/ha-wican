@@ -37,7 +37,12 @@ from .exceptions import WiCANConnectionError, WiCANWebhookError
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.DEVICE_TRACKER]
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.DEVICE_TRACKER,
+    Platform.UPDATE,
+]
 
 # Type alias for config entry with runtime data
 WiCANConfigEntry = ConfigEntry[WiCANRuntimeData]
@@ -144,9 +149,27 @@ async def async_setup_entry(
         entry,
     )
 
+    # Initialize GitHub releases coordinator (shared for firmware updates)
+    from .github_releases import GitHubReleasesCoordinator
+
+    # Determine if this is a WiCAN-PRO device
+    hw_version = entry.data.get("hw_version", "").lower()
+    is_pro = "pro" in hw_version
+
+    github_coordinator = GitHubReleasesCoordinator(hass, is_pro=is_pro)
+    try:
+        await github_coordinator.async_config_entry_first_refresh()
+    except Exception as err:
+        _LOGGER.warning(
+            "Failed to fetch GitHub releases (firmware updates unavailable): %s",
+            err,
+        )
+        # Don't fail setup - update entity will just show as unavailable
+
     # Set runtime_data with all necessary data
     entry.runtime_data = WiCANRuntimeData(
         coordinator=coordinator,
+        github_coordinator=github_coordinator,
         webhook_id=webhook_id,
         post_interval=post_interval,
         device_host=entry.data.get("host"),
