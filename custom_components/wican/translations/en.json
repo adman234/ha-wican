@@ -3,7 +3,15 @@
       "step": {
         "user": {
           "title": "Set up WiCAN",
-          "description": "Are you sure you want to set up the WiCAN integration?"
+          "description": "WiCAN devices are usually discovered automatically. Use manual setup only if automatic discovery failed.\n\nEnter the hostname or IP address of your WiCAN device.",
+          "data": {
+            "mdns": "Hostname or IP address",
+            "host": "Alternative IP (optional)"
+          }
+        },
+        "zeroconf_confirm": {
+          "title": "Discovered WiCAN device",
+          "description": "Do you want to add the WiCAN device **{name}** at `{url}` to Home Assistant?"
         }
       },
       "abort": {
@@ -12,22 +20,63 @@
       },
       "create_entry": {
         "default": "To send events to Home Assistant, you will need to set up a webhook.\n\nOpen WiCAN and go to *Settings → Services → Automation → Webhooks*\n\nEnable *Webhooks* and fill in the following webhook in the URL field:\n\n`{webhook_url}`\n\nSee [the documentation]({docs_url}) for further details."
+      },
+      "error": {
+        "connection_error": "Failed to connect to device: {error}",
+        "wican_error": "WiCAN error: {error}",
+        "device_mismatch": "Device ID mismatch. Expected {expected}, got {actual}. The device may have been replaced or the configuration is pointing to a different device. Please delete and reconfigure this integration.",
+        "unknown": "Unknown error occurred"
       }
     },
     "entity": {
       "sensor": {
-        "voltage": {
-          "name": "Main battery voltage"
+        "wifi_mode": {
+          "name": "WiFi Mode"
         },
-        "next_alarm": {
-          "name": "Next alarm"
+        "batt_voltage": {
+          "name": "Battery Voltage"
         },
-        "alarm_label": {
-          "name": "Alarm label",
-          "state": {
-            "alarm": "Alarm"
-          }
+        "vpn_status": {
+          "name": "VPN Status"
+        },
+        "uptime": {
+          "name": "Uptime"
         }
+      },
+      "binary_sensor": {
+        "ble_status": {
+          "name": "Bluetooth Enabled"
+        },
+        "ecu_status": {
+          "name": "ECU Online"
+        }
+      },
+      "device_tracker": {
+        "location": {
+          "name": "Location"
+        }
+      },
+      "update": {
+        "firmware": {
+          "name": "Firmware"
+        }
+      }
+    },
+    "exceptions": {
+      "firmware_download_failed": {
+        "message": "Failed to download firmware from GitHub: {error}"
+      },
+      "firmware_upload_failed": {
+        "message": "Failed to upload firmware to device: {error}"
+      },
+      "version_not_found": {
+        "message": "Firmware version {version} not found in GitHub releases"
+      },
+      "device_unreachable": {
+        "message": "Cannot reach device at {host} for firmware update"
+      },
+      "update_in_progress": {
+        "message": "A firmware update is already in progress"
       }
     }
   }

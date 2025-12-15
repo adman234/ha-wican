@@ -35,6 +35,7 @@ It is very much in an Alpha stage at the moment, and under constant changes, hop
 - In Home Assistant, go to 'Settings > Devices & Services > Integrations'.
 - Click on 'Add Integration', search for WiCAN, and select it.
 - Enter the mDNS/hostname (wican_xxxxxxxxxxxx.local) or IP-Address of WiCAN device to connect the WiCAN device. If you have multiple WiCAN devices repeat these steps for the other devices.
+- After setup, use the WiCAN integration's *Configure* button to adjust the **Post Interval** (in seconds) that controls how often the device pushes data to Home Assistant. The default is 15 seconds.
 
 Result: After completing installation and configuration, WiCAN will be connected to Home Assistant, and you will be able to monitor the available car parameters directly from the Home Assistant interface.
 

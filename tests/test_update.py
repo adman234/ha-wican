@@ -1,0 +1,722 @@
+"""Test the WiCAN update platform."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock, patch
+import pytest
+
+from aiohttp import ClientResponseError, ClientError
+from homeassistant.components.update import (
+    DOMAIN as UPDATE_DOMAIN,
+    SERVICE_INSTALL,
+    ATTR_VERSION,
+)
+from homeassistant.const import ATTR_ENTITY_ID, STATE_ON, STATE_OFF
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+from custom_components.wican.const import DOMAIN
+from custom_components.wican.exceptions import (
+    FirmwareDownloadError,
+    FirmwareUploadError,
+    FirmwareVersionNotFoundError,
+)
+
+
+@pytest.fixture
+def mock_github_release():
+    """Return mock GitHub release data for standard WiCAN-OBD (matches actual v4.13 release)."""
+    return {
+        "tag_name": "v4.13",
+        "name": "WiCAN v4.13",
+        "html_url": "https://github.com/meatpiHQ/wican-fw/releases/tag/v4.13",
+        "body": "Supported Devices: WiCAN-OBD and WiCAN-USB",
+        "prerelease": False,
+        "assets": [
+            {
+                "name": "wican-fw_obd_v413.bin",
+                "browser_download_url": "https://github.com/meatpiHQ/wican-fw/releases/download/v4.13/wican-fw_obd_v413.bin",
+                "size": 1646592,  # 1.57 MB from screenshot
+            },
+            {
+                "name": "wican-fw_obd_v413.zip",
+                "browser_download_url": "https://github.com/meatpiHQ/wican-fw/releases/download/v4.13/wican-fw_obd_v413.zip",
+                "size": 956416,  # 934 KB from screenshot
+            },
+            {
+                "name": "wican-fw_usb_v413u.bin",
+                "browser_download_url": "https://github.com/meatpiHQ/wican-fw/releases/download/v4.13/wican-fw_usb_v413u.bin",
+                "size": 1646592,  # 1.57 MB from screenshot
+            },
+            {
+                "name": "wican-fw_usb_v413u.zip",
+                "browser_download_url": "https://github.com/meatpiHQ/wican-fw/releases/download/v4.13/wican-fw_usb_v413u.zip",
+                "size": 968704,  # 947 KB from screenshot
+            },
+        ],
+    }
+
+
+@pytest.fixture
+def mock_github_release_pro():
+    """Return mock GitHub release data for WiCAN-PRO (matches actual GitHub release)."""
+    return {
+        "tag_name": "v4.45p",
+        "name": "WiCAN-PRO v4.45",
+        "html_url": "https://github.com/meatpiHQ/wican-fw/releases/tag/v4.45p",
+        "body": "Bug Fix:\n- Fixed WiFi primary/fallback issue\n- Removed full configuration from HTTP post",
+        "prerelease": False,
+        "assets": [
+            {
+                "name": "wican-fw_obd_pro_v445p.bin",
+                "browser_download_url": "https://github.com/meatpiHQ/wican-fw/releases/download/v4.45p/wican-fw_obd_pro_v445p.bin",
+                "size": 3342336,  # 3.19 MB from screenshot
+            },
+            {
+                "name": "wican-fw_obd_pro_v445p.zip",
+                "browser_download_url": "https://github.com/meatpiHQ/wican-fw/releases/download/v4.45p/wican-fw_obd_pro_v445p.zip",
+                "size": 1793024,  # 1.71 MB from screenshot
+            },
+        ],
+    }
+
+
+@pytest.fixture
+def mock_config_entry_pro() -> MockConfigEntry:
+    """Return a mock config entry for WiCAN-PRO."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="WiCAN PRO Device",
+        data={
+            "mdns": "http://wican_pro.local:80",
+            "webhook_id": "test_webhook_id_pro",
+            "fw_version": "4.44p",
+            "hw_version": "WiCAN-PRO",
+            "device_id": "test_device_pro",
+            "host": "wican_pro.local",
+            "ip": "192.168.1.101",
+        },
+        options={"post_interval": 1000},
+        unique_id="wican_pro-192.168.1.101:80",
+    )
+
+
+@pytest.fixture
+def mock_config_entry_usb() -> MockConfigEntry:
+    """Return a mock config entry for WiCAN-USB."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="WiCAN USB Device",
+        data={
+            "mdns": "http://wican_usb.local:80",
+            "webhook_id": "test_webhook_id_usb",
+            "fw_version": "4.13u",
+            "hw_version": "WiCAN-USB",
+            "device_id": "test_device_usb",
+            "host": "wican_usb.local",
+            "ip": "192.168.1.102",
+        },
+        options={"post_interval": 1000},
+        unique_id="wican_usb-192.168.1.102:80",
+    )
+
+
+async def test_update_entity_setup(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_github_release: dict,
+) -> None:
+    """Test update entity is created."""
+    mock_config_entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.wican.github_releases.async_get_clientsession"
+        ) as mock_session,
+    ):
+        # Mock GitHub API response
+        mock_response = AsyncMock()
+        mock_response.get.return_value.__aenter__.return_value.json.return_value = [
+            mock_github_release
+        ]
+        mock_response.get.return_value.__aenter__.return_value.raise_for_status = (
+            MagicMock()
+        )
+        mock_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_response.get.return_value.__aenter__.return_value
+        )
+
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    # Check update entity exists
+    state = hass.states.get("update.wican_device_firmware")
+    assert state is not None
+    assert state.attributes.get("installed_version") == "2.00"
+
+
+async def test_installed_version_from_coordinator(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_github_release: dict,
+) -> None:
+    """Test installed version comes from coordinator data."""
+    mock_config_entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.wican.github_releases.async_get_clientsession"
+        ) as mock_session,
+    ):
+        # Mock GitHub API
+        mock_response = AsyncMock()
+        mock_response.json.return_value = [mock_github_release]
+        mock_response.raise_for_status = MagicMock()
+        mock_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_response
+        )
+
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Simulate webhook data with new firmware version
+        coordinator = mock_config_entry.runtime_data.coordinator
+        coordinator.handle_webhook_data(
+            {
+                "status": {
+                    "fw_version": "4.50",
+                    "device_id": "test_device_123",
+                }
+            }
+        )
+        await hass.async_block_till_done()
+
+        # Check installed version updated
+        state = hass.states.get("update.wican_device_firmware")
+        assert state is not None
+        assert state.attributes.get("installed_version") == "4.50"
+
+
+async def test_latest_version_from_github(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_github_release: dict,
+) -> None:
+    """Test latest version comes from GitHub coordinator."""
+    mock_config_entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.wican.github_releases.async_get_clientsession"
+        ) as mock_session,
+    ):
+        # Mock GitHub API
+        mock_response = AsyncMock()
+        mock_response.json.return_value = [mock_github_release]
+        mock_response.raise_for_status = MagicMock()
+        mock_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_response
+        )
+
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Check latest version from GitHub
+        state = hass.states.get("update.wican_device_firmware")
+        assert state is not None
+        assert state.attributes.get("latest_version") == "4.45"
+
+
+async def test_firmware_filename_standard(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_github_release: dict,
+) -> None:
+    """Test firmware filename for standard WiCAN."""
+    mock_config_entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.wican.github_releases.async_get_clientsession"
+        ) as mock_gh_session,
+        patch(
+            "custom_components.wican.update.async_get_clientsession"
+        ) as mock_update_session,
+    ):
+        # Mock GitHub API
+        mock_gh_response = AsyncMock()
+        mock_gh_response.json.return_value = [mock_github_release]
+        mock_gh_response.raise_for_status = MagicMock()
+        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_gh_response
+        )
+
+        # Mock firmware download
+        mock_firmware_data = b"fake_firmware_data"
+        mock_download_response = AsyncMock()
+        mock_download_response.read.return_value = mock_firmware_data
+        mock_download_response.raise_for_status = MagicMock()
+
+        # Mock firmware upload
+        mock_upload_response = AsyncMock()
+        mock_upload_response.raise_for_status = MagicMock()
+
+        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_download_response
+        )
+        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
+            mock_upload_response
+        )
+
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Trigger firmware update
+        await hass.services.async_call(
+            UPDATE_DOMAIN,
+            SERVICE_INSTALL,
+            {ATTR_ENTITY_ID: "update.wican_device_firmware"},
+            blocking=True,
+        )
+
+        # Verify correct asset was downloaded (standard WiCAN-OBD)
+        download_calls = mock_update_session.return_value.get.call_args_list
+        assert len(download_calls) > 0
+        download_url = str(download_calls[0][0][0])
+        # Should use the OBD asset URL from GitHub release (not PRO or USB)
+        assert "wican-fw_obd_v413.bin" in download_url
+        assert "pro" not in download_url.lower()
+        assert "usb" not in download_url.lower()
+
+
+async def test_firmware_filename_pro(
+    hass: HomeAssistant,
+    mock_config_entry_pro: MockConfigEntry,
+    mock_github_release_pro: dict,
+) -> None:
+    """Test firmware asset selection for WiCAN-PRO."""
+    mock_config_entry_pro.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.wican.github_releases.async_get_clientsession"
+        ) as mock_gh_session,
+        patch(
+            "custom_components.wican.update.async_get_clientsession"
+        ) as mock_update_session,
+    ):
+        # Mock GitHub API with PRO release
+        mock_gh_response = AsyncMock()
+        mock_gh_response.json.return_value = [mock_github_release_pro]
+        mock_gh_response.raise_for_status = MagicMock()
+        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_gh_response
+        )
+
+        # Mock firmware download
+        mock_firmware_data = b"fake_firmware_data_pro"
+        mock_download_response = AsyncMock()
+        mock_download_response.read.return_value = mock_firmware_data
+        mock_download_response.raise_for_status = MagicMock()
+
+        # Mock firmware upload
+        mock_upload_response = AsyncMock()
+        mock_upload_response.raise_for_status = MagicMock()
+
+        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_download_response
+        )
+        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
+            mock_upload_response
+        )
+
+        assert await hass.config_entries.async_setup(mock_config_entry_pro.entry_id)
+        await hass.async_block_till_done()
+
+        # Trigger firmware update
+        await hass.services.async_call(
+            UPDATE_DOMAIN,
+            SERVICE_INSTALL,
+            {ATTR_ENTITY_ID: "update.wican_pro_device_firmware"},
+            blocking=True,
+        )
+
+        # Verify correct PRO asset was downloaded
+        download_calls = mock_update_session.return_value.get.call_args_list
+        assert len(download_calls) > 0
+        download_url = str(download_calls[0][0][0])
+        # Should use the PRO asset URL from GitHub release
+        assert "wican-fw_obd_pro_v445p.bin" in download_url
+        assert "pro" in download_url.lower()
+
+
+async def test_firmware_filename_usb(
+    hass: HomeAssistant,
+    mock_config_entry_usb: MockConfigEntry,
+    mock_github_release: dict,
+) -> None:
+    """Test firmware asset selection for WiCAN-USB."""
+    mock_config_entry_usb.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.wican.github_releases.async_get_clientsession"
+        ) as mock_gh_session,
+        patch(
+            "custom_components.wican.update.async_get_clientsession"
+        ) as mock_update_session,
+    ):
+        # Mock GitHub API with standard release (has both OBD and USB assets)
+        mock_gh_response = AsyncMock()
+        mock_gh_response.json.return_value = [mock_github_release]
+        mock_gh_response.raise_for_status = MagicMock()
+        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_gh_response
+        )
+
+        # Mock firmware download
+        mock_firmware_data = b"fake_firmware_data_usb"
+        mock_download_response = AsyncMock()
+        mock_download_response.read.return_value = mock_firmware_data
+        mock_download_response.raise_for_status = MagicMock()
+
+        # Mock firmware upload
+        mock_upload_response = AsyncMock()
+        mock_upload_response.raise_for_status = MagicMock()
+
+        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_download_response
+        )
+        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
+            mock_upload_response
+        )
+
+        assert await hass.config_entries.async_setup(mock_config_entry_usb.entry_id)
+        await hass.async_block_till_done()
+
+        # Trigger firmware update
+        await hass.services.async_call(
+            UPDATE_DOMAIN,
+            SERVICE_INSTALL,
+            {ATTR_ENTITY_ID: "update.wican_usb_device_firmware"},
+            blocking=True,
+        )
+
+        # Verify correct USB asset was downloaded
+        download_calls = mock_update_session.return_value.get.call_args_list
+        assert len(download_calls) > 0
+        download_url = str(download_calls[0][0][0])
+        # Should use the USB asset URL (not OBD)
+        assert "wican-fw_usb_v413u.bin" in download_url
+        assert "usb" in download_url.lower()
+
+
+async def test_firmware_download_404_error(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_github_release: dict,
+) -> None:
+    """Test firmware download with 404 error."""
+    mock_config_entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.wican.github_releases.async_get_clientsession"
+        ) as mock_gh_session,
+        patch(
+            "custom_components.wican.update.async_get_clientsession"
+        ) as mock_update_session,
+    ):
+        # Mock GitHub API
+        mock_gh_response = AsyncMock()
+        mock_gh_response.json.return_value = [mock_github_release]
+        mock_gh_response.raise_for_status = MagicMock()
+        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_gh_response
+        )
+
+        # Mock firmware download with 404 error
+        mock_download_response = AsyncMock()
+        mock_download_response.raise_for_status.side_effect = ClientResponseError(
+            request_info=MagicMock(), history=(), status=404
+        )
+
+        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_download_response
+        )
+
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Trigger firmware update - should fail with version not found
+        with pytest.raises(HomeAssistantError):
+            await hass.services.async_call(
+                UPDATE_DOMAIN,
+                SERVICE_INSTALL,
+                {ATTR_ENTITY_ID: "update.wican_device_firmware"},
+                blocking=True,
+            )
+
+
+async def test_firmware_upload_connection_error(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_github_release: dict,
+) -> None:
+    """Test firmware upload with connection error."""
+    mock_config_entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.wican.github_releases.async_get_clientsession"
+        ) as mock_gh_session,
+        patch(
+            "custom_components.wican.update.async_get_clientsession"
+        ) as mock_update_session,
+    ):
+        # Mock GitHub API
+        mock_gh_response = AsyncMock()
+        mock_gh_response.json.return_value = [mock_github_release]
+        mock_gh_response.raise_for_status = MagicMock()
+        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_gh_response
+        )
+
+        # Mock firmware download success
+        mock_firmware_data = b"fake_firmware_data"
+        mock_download_response = AsyncMock()
+        mock_download_response.read.return_value = mock_firmware_data
+        mock_download_response.raise_for_status = MagicMock()
+
+        # Mock firmware upload failure
+        mock_upload_response = AsyncMock()
+        mock_upload_response.raise_for_status.side_effect = ClientError("Connection failed")
+
+        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_download_response
+        )
+        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
+            mock_upload_response
+        )
+
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Trigger firmware update - should fail with upload error
+        with pytest.raises(HomeAssistantError):
+            await hass.services.async_call(
+                UPDATE_DOMAIN,
+                SERVICE_INSTALL,
+                {ATTR_ENTITY_ID: "update.wican_device_firmware"},
+                blocking=True,
+            )
+
+
+async def test_firmware_update_with_specific_version(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_github_release: dict,
+) -> None:
+    """Test firmware update with specific version."""
+    mock_config_entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.wican.github_releases.async_get_clientsession"
+        ) as mock_gh_session,
+        patch(
+            "custom_components.wican.update.async_get_clientsession"
+        ) as mock_update_session,
+    ):
+        # Mock GitHub API
+        mock_gh_response = AsyncMock()
+        mock_gh_response.json.return_value = [mock_github_release]
+        mock_gh_response.raise_for_status = MagicMock()
+        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_gh_response
+        )
+
+        # Mock firmware download
+        mock_firmware_data = b"fake_firmware_v4.40"
+        mock_download_response = AsyncMock()
+        mock_download_response.read.return_value = mock_firmware_data
+        mock_download_response.raise_for_status = MagicMock()
+
+        # Mock firmware upload
+        mock_upload_response = AsyncMock()
+        mock_upload_response.raise_for_status = MagicMock()
+
+        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_download_response
+        )
+        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
+            mock_upload_response
+        )
+
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Trigger firmware update with specific version
+        await hass.services.async_call(
+            UPDATE_DOMAIN,
+            SERVICE_INSTALL,
+            {
+                ATTR_ENTITY_ID: "update.wican_device_firmware",
+                ATTR_VERSION: "4.40",
+            },
+            blocking=True,
+        )
+
+        # Verify correct version was requested
+        download_calls = mock_update_session.return_value.get.call_args_list
+        assert len(download_calls) > 0
+        download_url = str(download_calls[0][0][0])
+        assert "wican_v4.40.bin" in download_url
+
+
+async def test_update_entity_unavailable_without_version(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_github_release: dict,
+) -> None:
+    """Test update entity is unavailable without installed version."""
+    # Create config entry without fw_version
+    config_entry_no_version = MockConfigEntry(
+        domain=DOMAIN,
+        title="WiCAN Device",
+        data={
+            "mdns": "http://wican_test.local:80",
+            "webhook_id": "test_webhook_id",
+            "device_id": "test_device_123",
+            "host": "wican_test.local",
+        },
+        options={"post_interval": 1000},
+        unique_id="wican_test-192.168.1.100:80",
+    )
+    config_entry_no_version.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.wican.github_releases.async_get_clientsession"
+        ) as mock_session,
+    ):
+        # Mock GitHub API
+        mock_response = AsyncMock()
+        mock_response.json.return_value = [mock_github_release]
+        mock_response.raise_for_status = MagicMock()
+        mock_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_response
+        )
+
+        assert await hass.config_entries.async_setup(config_entry_no_version.entry_id)
+        await hass.async_block_till_done()
+
+        # Check update entity is unavailable
+        state = hass.states.get("update.wican_device_firmware")
+        assert state is not None
+        assert state.state == "unavailable"
+
+
+async def test_progress_reporting_during_update(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_github_release: dict,
+) -> None:
+    """Test progress is reported during firmware update."""
+    mock_config_entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.wican._async_register_webhook_on_device",
+            return_value=True,
+        ),
+        patch(
+            "custom_components.wican.github_releases.async_get_clientsession"
+        ) as mock_gh_session,
+        patch(
+            "custom_components.wican.update.async_get_clientsession"
+        ) as mock_update_session,
+        patch("asyncio.sleep", return_value=None),  # Speed up test
+    ):
+        # Mock GitHub API
+        mock_gh_response = AsyncMock()
+        mock_gh_response.json.return_value = [mock_github_release]
+        mock_gh_response.raise_for_status = MagicMock()
+        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_gh_response
+        )
+
+        # Mock firmware download
+        mock_firmware_data = b"fake_firmware_data"
+        mock_download_response = AsyncMock()
+        mock_download_response.read.return_value = mock_firmware_data
+        mock_download_response.raise_for_status = MagicMock()
+
+        # Mock firmware upload
+        mock_upload_response = AsyncMock()
+        mock_upload_response.raise_for_status = MagicMock()
+
+        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
+            mock_download_response
+        )
+        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
+            mock_upload_response
+        )
+
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+        # Trigger firmware update
+        await hass.services.async_call(
+            UPDATE_DOMAIN,
+            SERVICE_INSTALL,
+            {ATTR_ENTITY_ID: "update.wican_device_firmware"},
+            blocking=True,
+        )
+
+        # Verify update completed (progress back to False)
+        state = hass.states.get("update.wican_device_firmware")
+        assert state is not None
+        assert state.attributes.get("in_progress") is False

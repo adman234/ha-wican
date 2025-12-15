@@ -12,14 +12,14 @@ from homeassistant.components.binary_sensor import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import EntityCategory
-from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import WiCANConfigEntry
 from .entity import WiCANEntity
 from .attributes import WiCANBinarySensorEntityDescription, BINARY_SENSOR_DESCRIPTIONS, get_sensor_attributes
 
-LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 TRUE_STRINGS = {"enable", "true", "online"}
@@ -32,7 +32,7 @@ def is_true_status(value: str) -> bool:
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: WiCANConfigEntry,
-    async_add_entities: AddConfigEntryEntitiesCallback,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the binary sensor platform."""
 
@@ -44,28 +44,41 @@ async def async_setup_entry(
 class WiCANBinarySensorEntity(WiCANEntity, BinarySensorEntity, RestoreEntity):
     """A binary sensor entity."""
 
+    __slots__ = ("_attr_is_on", "_attr_extra_state_attributes")
+
     entity_description: WiCANBinarySensorEntityDescription
 
     def __init__(self, config_entry, entity_description):
         super().__init__(config_entry, entity_description)
         self._attr_unique_id = f"{config_entry.entry_id}_{entity_description.key}"
+        self._attr_is_on = None
+        self._attr_extra_state_attributes = None
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        key = self.entity_description.key
+        status = self.coordinator.data.get("status", {})
+
+        # If key not present, don't change state. Availability handled below.
+        if key in status:
+            self._attr_is_on = is_true_status(status[key])
+            self._attr_extra_state_attributes = get_sensor_attributes(key, self.coordinator.data)
+
+        # Availability: if we have a status dict, entity is available; if device stopped pushing,
+        # HA will keep last state, but we still emit state writes on updates to ensure logbook records.
+        # Write state to Home Assistant.
+        self.async_write_ha_state()
 
     @callback
     def _async_handle_event(self, webhook_id: str, data) -> None:
-        key = self.entity_description.key
-        if webhook_id != self.webhook_id:
-            return
-        if data.get('status') is None:
-            return
-        if data['status'].get(key) is None:
-            return
-        self._attr_is_on = is_true_status(data['status'][key])
-        self._attr_extra_state_attributes = get_sensor_attributes(key, data)
-        self.async_write_ha_state()
+        """Handle webhook event (backward compatibility)."""
+        # Coordinator update will trigger _handle_coordinator_update()
+        pass
 
     async def async_added_to_hass(self) -> None:
         """Restore entity state."""
-        await super().async_added_to_hass()
+        # Restore last known state so logbook has a baseline before first push
         last_state = await self.async_get_last_state()
         if last_state is not None and self._attr_is_on is None:
             self._attr_is_on = last_state.state == "on"
+        await super().async_added_to_hass()
