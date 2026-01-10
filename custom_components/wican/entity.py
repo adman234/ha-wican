@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any
 
-from homeassistant.const import CONF_WEBHOOK_ID
+from homeassistant.core import callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityDescription
@@ -53,8 +52,14 @@ class WiCANEntity(CoordinatorEntity[WiCANDataUpdateCoordinator]):
         await super().async_added_to_hass()
 
         # Keep dispatcher for backward compatibility during migration
+        @callback
+        def _handle_event_filtered(webhook_id: str, data: dict[str, str]) -> None:
+            if webhook_id != self.webhook_id:
+                return
+            self._async_handle_event(webhook_id, data)
+
         self.async_on_remove(
-            async_dispatcher_connect(self.hass, DOMAIN, self._async_handle_event)
+            async_dispatcher_connect(self.hass, DOMAIN, _handle_event_filtered)
         )
 
     def _handle_coordinator_update(self) -> None:

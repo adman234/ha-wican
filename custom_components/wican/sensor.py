@@ -138,17 +138,19 @@ async def async_setup_entry(
             async_add_entities(new_entities)
 
     def handle_pid_update(webhook_id, data):
+        # IMPORTANT: multiple WiCAN entries share the same dispatcher signal.
+        # Filter by this entry's webhook_id to avoid cross-device entity creation.
+        if webhook_id != config_entry.runtime_data.webhook_id:
+            return
         hass.loop.call_soon_threadsafe(
             hass.async_create_task,
             _async_process_pid_update(webhook_id, data),
         )
 
     # Connect the dispatcher signal to handle_pid_update
-    async_dispatcher_connect(
-        hass,
-        DOMAIN,
-        handle_pid_update
-    )
+    unsub = async_dispatcher_connect(hass, DOMAIN, handle_pid_update)
+    config_entry.async_on_unload(unsub)
+
 
 class WiCANSensorEntity(WiCANEntity, RestoreSensor):
     """A sensor entity."""
