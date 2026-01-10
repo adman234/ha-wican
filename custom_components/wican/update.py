@@ -8,7 +8,6 @@ import secrets
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
-import async_timeout
 from homeassistant.components.update import (
     UpdateDeviceClass,
     UpdateEntity,
@@ -215,7 +214,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
         session = async_get_clientsession(self.hass)
 
         try:
-            async with async_timeout.timeout(GITHUB_API_TIMEOUT):
+            async with asyncio.timeout(GITHUB_API_TIMEOUT):
                 response = await session.get(
                     url,
                     headers={"Accept": "application/vnd.github.v3+json"},
@@ -351,7 +350,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
 
         session = async_get_clientsession(self.hass)
         try:
-            async with async_timeout.timeout(FIRMWARE_DOWNLOAD_TIMEOUT):
+            async with asyncio.timeout(FIRMWARE_DOWNLOAD_TIMEOUT):
                 response = await session.get(download_url)
                 response.raise_for_status()
                 firmware_data = await response.read()
@@ -420,7 +419,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
             # Attempt 1: regular multipart upload (may use chunked transfer encoding).
             # Now that device firmware supports multipart+chunked, prefer this simpler path.
             try:
-                async with async_timeout.timeout(FIRMWARE_UPLOAD_TIMEOUT):
+                async with asyncio.timeout(FIRMWARE_UPLOAD_TIMEOUT):
                     form_data = aiohttp.FormData()
                     form_data.add_field(
                         OTA_FORM_FIELD,
@@ -463,7 +462,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
                     boundary,
                 )
 
-                async with async_timeout.timeout(FIRMWARE_UPLOAD_TIMEOUT):
+                async with asyncio.timeout(FIRMWARE_UPLOAD_TIMEOUT):
                     response = await session.post(
                         url,
                         data=body,

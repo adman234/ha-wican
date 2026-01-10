@@ -11,7 +11,6 @@ from uuid import uuid4
 
 from aiohttp import ClientError, ClientResponseError
 from aiohttp.web import Request, Response
-import async_timeout
 from homeassistant.components import webhook
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_WEBHOOK_ID, EVENT_HOMEASSISTANT_STARTED, Platform
@@ -440,7 +439,7 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
     for attempt in range(max_retries):
         try:
             # Add timeout protection
-            async with async_timeout.timeout(WEBHOOK_REGISTRATION_TIMEOUT):
+            async with asyncio.timeout(WEBHOOK_REGISTRATION_TIMEOUT):
                 # Try each endpoint candidate until one succeeds
                 for ep in endpoints:
                     try:

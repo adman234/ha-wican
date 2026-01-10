@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
-import async_timeout
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -56,7 +56,7 @@ class GitHubReleasesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         session = async_get_clientsession(self.hass)
 
         try:
-            async with async_timeout.timeout(GITHUB_API_TIMEOUT):
+            async with asyncio.timeout(GITHUB_API_TIMEOUT):
                 response = await session.get(
                     url,
                     headers={"Accept": "application/vnd.github.v3+json"},
