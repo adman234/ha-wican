@@ -356,3 +356,112 @@ class TestPidAliasNormalization:
         for variant in variants:
             unit = get_param_unit(variant)
             assert unit == "%", f"{variant} should have unit %, got {unit}"
+
+
+class TestGitHubParamsUpdate:
+    """Tests for GitHub params.json update functionality."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_params_from_github_success(self) -> None:
+        """Test successful fetch from GitHub."""
+        from unittest.mock import AsyncMock, MagicMock
+        from custom_components.wican.param_loader import async_fetch_params_from_github
+
+        # Mock response
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.read = AsyncMock(return_value=b'{"TEST_PARAM": {"description": "Test", "settings": {"unit": "V"}}}')
+
+        # Mock session
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock()))
+
+        params, content_hash = await async_fetch_params_from_github(mock_session)
+
+        assert params is not None
+        assert "TEST_PARAM" in params
+        assert params["TEST_PARAM"]["settings"]["unit"] == "V"
+        assert content_hash is not None
+
+    @pytest.mark.asyncio
+    async def test_fetch_params_from_github_http_error(self) -> None:
+        """Test handling of HTTP error from GitHub."""
+        from unittest.mock import AsyncMock, MagicMock
+        from custom_components.wican.param_loader import async_fetch_params_from_github
+
+        # Mock 404 response
+        mock_response = AsyncMock()
+        mock_response.status = 404
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock()))
+
+        params, content_hash = await async_fetch_params_from_github(mock_session)
+
+        assert params is None
+        assert content_hash is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_params_from_github_invalid_json(self) -> None:
+        """Test handling of invalid JSON from GitHub."""
+        from unittest.mock import AsyncMock, MagicMock
+        from custom_components.wican.param_loader import async_fetch_params_from_github
+
+        # Mock response with invalid JSON
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.read = AsyncMock(return_value=b'invalid json {{{')
+
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock()))
+
+        params, content_hash = await async_fetch_params_from_github(mock_session)
+
+        assert params is None
+        assert content_hash is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_params_from_github_timeout(self) -> None:
+        """Test handling of timeout from GitHub."""
+        import asyncio
+        from unittest.mock import MagicMock
+        from custom_components.wican.param_loader import async_fetch_params_from_github
+
+        # Mock session that raises timeout
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(side_effect=asyncio.TimeoutError())
+
+        params, content_hash = await async_fetch_params_from_github(mock_session)
+
+        assert params is None
+        assert content_hash is None
+
+    def test_compute_hash_consistency(self) -> None:
+        """Test that hash computation is consistent."""
+        from custom_components.wican.param_loader import _compute_hash
+
+        data = b'{"test": "data"}'
+        hash1 = _compute_hash(data)
+        hash2 = _compute_hash(data)
+
+        assert hash1 == hash2
+        assert len(hash1) == 64  # SHA256 hex length
+
+    def test_compute_hash_different_data(self) -> None:
+        """Test that different data produces different hashes."""
+        from custom_components.wican.param_loader import _compute_hash
+
+        hash1 = _compute_hash(b'{"test": "data1"}')
+        hash2 = _compute_hash(b'{"test": "data2"}')
+
+        assert hash1 != hash2
+
+    def test_reload_params(self) -> None:
+        """Test reload_params reloads from disk."""
+        from custom_components.wican.param_loader import reload_params, get_all_params
+
+        # Just verify it doesn't crash and returns valid data
+        reload_params()
+        params = get_all_params()
+        assert isinstance(params, dict)
+        assert "SOC" in params  # Known param should still exist

@@ -126,6 +126,18 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: WiCANConfigEntry
 ) -> bool:
     """Set up WiCAN from a config entry."""
+    # Update params.json from GitHub (non-blocking, best-effort)
+    try:
+        from .param_loader import async_update_params_from_github
+
+        session = async_get_clientsession(hass)
+        updated = await async_update_params_from_github(session)
+        if updated:
+            _LOGGER.info("Updated PID parameter definitions from GitHub")
+    except Exception as err:
+        _LOGGER.debug("Could not update params from GitHub: %s", err)
+        # Continue with bundled/cached version
+
     # Ensure webhook_id exists (older entries may lack it); generate if missing
     webhook_id = entry.data.get(CONF_WEBHOOK_ID)
     if not webhook_id:

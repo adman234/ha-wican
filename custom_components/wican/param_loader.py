@@ -4,11 +4,13 @@ Loads parameter definitions from the bundled params.json file, which is sourced 
 the WiCAN firmware repository:
 https://github.com/meatpiHQ/wican-fw/blob/main/.vehicle_profiles/params.json
 
-To update: Download the latest params.json and replace the file in data/params.json.
+The integration will attempt to fetch updates from GitHub on reload and update
+the local cache if changes are detected.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -16,8 +18,17 @@ from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
     from typing import Final
+    from aiohttp import ClientSession
 
 _LOGGER = logging.getLogger(__name__)
+
+# GitHub raw URL for params.json
+PARAMS_GITHUB_URL: Final[str] = (
+    "https://raw.githubusercontent.com/meatpiHQ/wican-fw/main/.vehicle_profiles/params.json"
+)
+
+# Timeout for GitHub fetch (seconds)
+GITHUB_FETCH_TIMEOUT: Final[int] = 10
 
 
 class ParamSettings(TypedDict, total=False):
@@ -154,13 +165,18 @@ PARAM_NAME_ICONS: Final[dict[str, str]] = {
 DEFAULT_PARAM_ICON: Final[str] = "mdi:car-info"
 
 
+def _get_params_file_path() -> Path:
+    """Get the path to the params.json file."""
+    return Path(__file__).parent / "data" / "params.json"
+
+
 def _load_params() -> dict[str, ParamDefinition]:
     """Load parameters from bundled JSON file.
 
     Returns:
         Dictionary mapping parameter names (uppercase) to their definitions.
     """
-    params_file = Path(__file__).parent / "data" / "params.json"
+    params_file = _get_params_file_path()
 
     try:
         with params_file.open(encoding="utf-8") as f:
@@ -175,8 +191,129 @@ def _load_params() -> dict[str, ParamDefinition]:
         return {}
 
 
-# Load params at module import time (singleton pattern)
-_PARAMS: Final[dict[str, ParamDefinition]] = _load_params()
+def _compute_hash(data: bytes) -> str:
+    """Compute SHA256 hash of data."""
+    return hashlib.sha256(data).hexdigest()
+
+
+def _get_current_params_hash() -> str | None:
+    """Get hash of current params.json file."""
+    params_file = _get_params_file_path()
+    try:
+        return _compute_hash(params_file.read_bytes())
+    except (FileNotFoundError, OSError):
+        return None
+
+
+async def async_fetch_params_from_github(
+    session: ClientSession,
+) -> tuple[dict[str, ParamDefinition] | None, str | None]:
+    """Fetch params.json from GitHub.
+
+    Args:
+        session: aiohttp ClientSession to use for the request.
+
+    Returns:
+        Tuple of (parsed params dict, content hash) or (None, None) on failure.
+    """
+    import asyncio
+
+    try:
+        async with asyncio.timeout(GITHUB_FETCH_TIMEOUT):
+            async with session.get(PARAMS_GITHUB_URL) as response:
+                if response.status != 200:
+                    _LOGGER.debug(
+                        "Failed to fetch params.json from GitHub: HTTP %s",
+                        response.status,
+                    )
+                    return None, None
+
+                content = await response.read()
+                content_hash = _compute_hash(content)
+
+                try:
+                    data = json.loads(content.decode("utf-8"))
+                    _LOGGER.debug(
+                        "Fetched %d parameters from GitHub (hash: %s...)",
+                        len(data),
+                        content_hash[:8],
+                    )
+                    return data, content_hash
+                except json.JSONDecodeError as err:
+                    _LOGGER.warning("Failed to parse GitHub params.json: %s", err)
+                    return None, None
+
+    except asyncio.TimeoutError:
+        _LOGGER.debug("Timeout fetching params.json from GitHub")
+        return None, None
+    except Exception as err:
+        _LOGGER.debug("Error fetching params.json from GitHub: %s", err)
+        return None, None
+
+
+async def async_update_params_from_github(session: ClientSession) -> bool:
+    """Fetch params.json from GitHub and update local file if changed.
+
+    Args:
+        session: aiohttp ClientSession to use for the request.
+
+    Returns:
+        True if params were updated, False otherwise.
+    """
+    global _PARAMS
+
+    # Get current hash
+    current_hash = _get_current_params_hash()
+
+    # Fetch from GitHub
+    new_params, new_hash = await async_fetch_params_from_github(session)
+
+    if new_params is None:
+        _LOGGER.debug("Could not fetch params from GitHub, keeping current version")
+        return False
+
+    # Check if hash changed
+    if current_hash and current_hash == new_hash:
+        _LOGGER.debug("params.json is up to date (hash: %s...)", current_hash[:8])
+        return False
+
+    # Write updated params to file
+    params_file = _get_params_file_path()
+    try:
+        # Ensure data directory exists
+        params_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write with pretty formatting for readability
+        with params_file.open("w", encoding="utf-8") as f:
+            json.dump(new_params, f, indent=2, ensure_ascii=False)
+
+        _LOGGER.info(
+            "Updated params.json from GitHub: %d parameters (hash: %s...)",
+            len(new_params),
+            new_hash[:8] if new_hash else "unknown",
+        )
+
+        # Update in-memory params
+        _PARAMS.clear()
+        _PARAMS.update(new_params)
+
+        return True
+
+    except OSError as err:
+        _LOGGER.warning("Failed to write updated params.json: %s", err)
+        return False
+
+
+def reload_params() -> None:
+    """Reload params from disk (useful after update)."""
+    global _PARAMS
+    new_params = _load_params()
+    _PARAMS.clear()
+    _PARAMS.update(new_params)
+
+
+# Mutable params dict (can be updated at runtime)
+_PARAMS: dict[str, ParamDefinition] = _load_params()
 
 
 # Mapping from common PID variants to canonical params.json names
