@@ -2,38 +2,43 @@
 
 from __future__ import annotations
 
-from http import HTTPStatus
 import asyncio
+from http import HTTPStatus
+import logging
+import time
+from typing import TYPE_CHECKING
+from uuid import uuid4
 
-from aiohttp.web import Request, Response
 from aiohttp import ClientError, ClientResponseError
+from aiohttp.web import Request, Response
 import async_timeout
-import voluptuous as vol
-
 from homeassistant.components import webhook
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_WEBHOOK_ID, Platform, EVENT_HOMEASSISTANT_STARTED
-from homeassistant.core import HomeAssistant
+from homeassistant.const import CONF_WEBHOOK_ID, EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.network import get_url
+import voluptuous as vol
 from yarl import URL
 
 from .const import (
-    DOMAIN,
     CONF_POST_INTERVAL,
     DEFAULT_POST_INTERVAL,
+    DOMAIN,
+    IP_CACHE_DURATION,
+    WEBHOOK_MAX_RETRIES,
     WEBHOOK_REGISTRATION_TIMEOUT,
     WEBHOOK_RETRY_DELAY_BASE,
-    WEBHOOK_MAX_RETRIES,
-    IP_CACHE_DURATION,
 )
 from .coordinator import WiCANDataUpdateCoordinator
+from .exceptions import WiCANWebhookError
+from .github_releases import GitHubReleasesCoordinator
 from .models import WiCANRuntimeData
+from .param_loader import async_update_params_from_github
 
-import logging
-from .exceptions import WiCANConnectionError, WiCANWebhookError
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,7 +53,7 @@ PLATFORMS: list[Platform] = [
 WiCANConfigEntry = ConfigEntry[WiCANRuntimeData]
 
 
-class _WebhookEndpointsFailed(WiCANWebhookError):
+class _WebhookEndpointsFailedError(WiCANWebhookError):
     """Raised when all webhook endpoints failed for this attempt."""
 
 
@@ -122,14 +127,13 @@ def _extract_request_ip(request: Request) -> str | None:
     return None
 
 
-async def async_setup_entry(
-    hass: HomeAssistant, entry: WiCANConfigEntry
+async def async_setup_entry(  # noqa: C901, PLR0915
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
 ) -> bool:
     """Set up WiCAN from a config entry."""
     # Update params.json from GitHub (non-blocking, best-effort)
     try:
-        from .param_loader import async_update_params_from_github
-
         session = async_get_clientsession(hass)
         updated = await async_update_params_from_github(session)
         if updated:
@@ -142,7 +146,6 @@ async def async_setup_entry(
     webhook_id = entry.data.get(CONF_WEBHOOK_ID)
     if not webhook_id:
         try:
-            from uuid import uuid4
             webhook_id = uuid4().hex
             new_data = dict(entry.data)
             new_data[CONF_WEBHOOK_ID] = webhook_id
@@ -160,9 +163,6 @@ async def async_setup_entry(
         hass,
         entry,
     )
-
-    # Initialize GitHub releases coordinator (shared for firmware updates)
-    from .github_releases import GitHubReleasesCoordinator
 
     # Determine if this is a WiCAN-PRO device
     hw_version = entry.data.get("hw_version", "").lower()
@@ -200,8 +200,10 @@ async def async_setup_entry(
         )
         # Don't fail setup - entities will update when first webhook arrives
 
-    async def handle_webhook(
-        hass: HomeAssistant, webhook_id: str, request: Request
+    async def handle_webhook(  # noqa: C901, PLR0912
+        hass: HomeAssistant,
+        webhook_id: str,
+        request: Request,
     ) -> Response:
         """Handle incoming WiCAN webhook request."""
         _LOGGER.info("Received WiCAN webhook: %s", webhook_id)
@@ -210,7 +212,7 @@ async def async_setup_entry(
             _LOGGER.debug("Webhook payload: %s", data)
         except vol.MultipleInvalid as error:
             return Response(
-                text=error.error_message, status=HTTPStatus.UNPROCESSABLE_ENTITY
+                text=error.error_message, status=HTTPStatus.UNPROCESSABLE_ENTITY,
             )
 
         # Extract device info fields from top-level or nested "status"
@@ -262,18 +264,15 @@ async def async_setup_entry(
                         entry.title,
                     )
                     hass.async_create_task(
-                        _async_register_webhook_on_device(hass, entry)
+                        _async_register_webhook_on_device(hass, entry),
                     )
 
         # Update coordinator with new data
         try:
             coordinator.handle_webhook_data(data)
-        except ConfigEntryError as err:
+        except ConfigEntryError:
             # Device identity mismatch - log error and reject webhook
-            _LOGGER.error(
-                "Rejecting webhook due to device identity validation failure: %s",
-                err,
-            )
+            _LOGGER.exception("Rejecting webhook due to device identity validation failure")
             return Response(
                 text="Device identity mismatch",
                 status=HTTPStatus.FORBIDDEN,
@@ -284,7 +283,7 @@ async def async_setup_entry(
         return Response(status=HTTPStatus.NO_CONTENT)
 
     webhook.async_register(
-        hass, DOMAIN, entry.title, webhook_id, handle_webhook
+        hass, DOMAIN, entry.title, webhook_id, handle_webhook,
     )
 
     # Normalize host/mdns schemes BEFORE scheduling registration
@@ -301,7 +300,7 @@ async def async_setup_entry(
 
 
 async def async_unload_entry(
-    hass: HomeAssistant, entry: WiCANConfigEntry
+    hass: HomeAssistant, entry: WiCANConfigEntry,
 ) -> bool:
     """Unload a config entry."""
     webhook.async_unregister(hass, entry.runtime_data.webhook_id)
@@ -310,13 +309,13 @@ async def async_unload_entry(
 
 def _normalize_connection_urls(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
     """Normalize host/mdns URLs by ensuring they have http:// scheme.
-    
+
     This is done once during setup to avoid triggering update listener
     which would cause duplicate webhook registrations.
     """
     updated_data = dict(entry.data)
     data_changed = False
-    
+
     # Normalize mdns
     mdns = updated_data.get("mdns")
     if mdns:
@@ -324,7 +323,7 @@ def _normalize_connection_urls(hass: HomeAssistant, entry: WiCANConfigEntry) -> 
         if normalized_mdns != mdns:
             updated_data["mdns"] = normalized_mdns
             data_changed = True
-    
+
     # Normalize host
     host = updated_data.get("host")
     if host:
@@ -332,7 +331,7 @@ def _normalize_connection_urls(hass: HomeAssistant, entry: WiCANConfigEntry) -> 
         if normalized_host != host:
             updated_data["host"] = normalized_host
             data_changed = True
-    
+
     if data_changed:
         hass.config_entries.async_update_entry(entry, data=updated_data)
 
@@ -347,8 +346,10 @@ def _schedule_webhook_registration(hass: HomeAssistant, entry: WiCANConfigEntry)
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _register)
 
 
-async def _async_register_webhook_on_device(
-    hass: HomeAssistant, entry: WiCANConfigEntry, max_retries: int = WEBHOOK_MAX_RETRIES
+async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
+    max_retries: int = WEBHOOK_MAX_RETRIES,
 ) -> bool:
     """Push webhook URL and interval to the WiCAN device with retry."""
     # Prefer direct IP/host if available (similar to WLED), fallback to mDNS
@@ -380,10 +381,7 @@ async def _async_register_webhook_on_device(
     try:
         base_url: str = get_url(hass)
         webhook_path = webhook.async_generate_url(hass, entry.runtime_data.webhook_id)
-        if webhook_path.startswith("http"):
-            webhook_url = webhook_path
-        else:
-            webhook_url = str(URL(base_url) / webhook_path.lstrip("/"))
+        webhook_url = webhook_path if webhook_path.startswith("http") else str(URL(base_url) / webhook_path.lstrip("/"))
     except Exception as err:
         _LOGGER.warning("Cannot generate webhook URL for %s: %s", entry.entry_id, err)
         return False
@@ -392,7 +390,7 @@ async def _async_register_webhook_on_device(
     post_interval = entry.runtime_data.post_interval
 
     _LOGGER.info(
-        "Registering WiCAN webhook %s with interval %ss", webhook_url, post_interval
+        "Registering WiCAN webhook %s with interval %ss", webhook_url, post_interval,
     )
 
     # Use HA's shared session (reuses connections)
@@ -401,10 +399,8 @@ async def _async_register_webhook_on_device(
 
     # Build endpoint candidates: prefer direct host/IP over mDNS
     # Use cached resolved IP if available and fresh (< 5 minutes old)
-    import time
-    
     endpoints: list[URL] = []
-    
+
     # Check if we have a cached IP and it's still valid
     if (
         entry.runtime_data.cached_resolved_ip
@@ -412,7 +408,7 @@ async def _async_register_webhook_on_device(
         and (time.time() - entry.runtime_data.cache_timestamp) < IP_CACHE_DURATION
     ):
         cached_endpoint = _build_webhook_endpoint(
-            f"http://{entry.runtime_data.cached_resolved_ip}"
+            f"http://{entry.runtime_data.cached_resolved_ip}",
         )
         if cached_endpoint:
             endpoints.append(cached_endpoint)
@@ -421,7 +417,7 @@ async def _async_register_webhook_on_device(
                 entry.runtime_data.cached_resolved_ip,
                 time.time() - entry.runtime_data.cache_timestamp,
             )
-    
+
     # Add host and mDNS as fallback
     for candidate in (host, mdns):
         endpoint = _build_webhook_endpoint(candidate)
@@ -461,10 +457,9 @@ async def _async_register_webhook_on_device(
                                 attempt + 1,
                                 max_retries,
                             )
-                            
+
                             # Cache the successful IP for future registrations
                             try:
-                                import time
                                 # Extract IP from endpoint URL
                                 endpoint_host = ep.host
                                 if endpoint_host and not endpoint_host.endswith(".local"):
@@ -476,9 +471,9 @@ async def _async_register_webhook_on_device(
                                     )
                             except Exception as cache_err:
                                 _LOGGER.debug(
-                                    "Failed to cache IP: %s", cache_err
+                                    "Failed to cache IP: %s", cache_err,
                                 )
-                            
+
                             return True
 
                         text = await resp.text()
@@ -501,16 +496,16 @@ async def _async_register_webhook_on_device(
                         )
 
                 # No endpoint succeeded during this attempt
-                raise _WebhookEndpointsFailed()
+                raise _WebhookEndpointsFailedError  # noqa: TRY301
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             _LOGGER.warning(
                 "WiCAN webhook registration timeout after %ds (attempt %d/%d)",
                 WEBHOOK_REGISTRATION_TIMEOUT,
                 attempt + 1,
                 max_retries,
             )
-        except _WebhookEndpointsFailed:
+        except _WebhookEndpointsFailedError:
             _LOGGER.debug(
                 "All WiCAN endpoints failed for entry %s on attempt %d/%d",
                 entry.entry_id,
@@ -531,10 +526,9 @@ async def _async_register_webhook_on_device(
                 attempt + 1,
                 max_retries,
             )
-        except Exception as err:
-            _LOGGER.error(
-                "WiCAN webhook registration unexpected error: %s (attempt %d/%d)",
-                err,
+        except Exception:
+            _LOGGER.exception(
+                "WiCAN webhook registration unexpected error (attempt %d/%d)",
                 attempt + 1,
                 max_retries,
             )

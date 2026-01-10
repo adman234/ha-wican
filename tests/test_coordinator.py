@@ -356,7 +356,7 @@ async def test_coordinator_numeric_string_conversion_edge_cases(
     await hass.async_block_till_done()
     
     # Verify entities handled the data
-    state = hass.states.get("sensor.wican_device_wifi_mode")
+    state = hass.states.get("sensor.wican_test_wifi_mode")
     assert state is not None
 
 

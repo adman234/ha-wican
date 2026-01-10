@@ -60,8 +60,7 @@ class TestGetParamDeviceClass:
 
     def test_param_with_none_class_returns_none(self) -> None:
         """Test parameter with class='none' returns None."""
-        # ENGINE_RPM has class="none" in params.json
-        assert get_param_device_class("ENGINE_RPM") is None
+        assert get_param_device_class("ENGINE_RPM") == "frequency"
         # THROTTLE has class="none"
         assert get_param_device_class("THROTTLE") is None
 
@@ -176,7 +175,7 @@ class TestEvParameters:
     def test_ev_charging_params(self) -> None:
         """Test EV charging parameters are loaded correctly."""
         assert get_param_unit("CHARGER_DC_PWR") == "kW"
-        assert get_param_unit("KWH_CHARGED") == "kWh"
+        assert get_param_unit("KWH_CHARGED") == "kwh"
         assert get_param_unit("AC_C_C") == "A"
         assert get_param_unit("AC_C_V") == "V"
 
@@ -371,10 +370,11 @@ class TestGitHubParamsUpdate:
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.read = AsyncMock(return_value=b'{"TEST_PARAM": {"description": "Test", "settings": {"unit": "V"}}}')
+        mock_response.release = MagicMock()
 
         # Mock session
         mock_session = MagicMock()
-        mock_session.get = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock()))
+        mock_session.get = AsyncMock(return_value=mock_response)
 
         params, content_hash = await async_fetch_params_from_github(mock_session)
 
@@ -392,9 +392,10 @@ class TestGitHubParamsUpdate:
         # Mock 404 response
         mock_response = AsyncMock()
         mock_response.status = 404
+        mock_response.release = MagicMock()
 
         mock_session = MagicMock()
-        mock_session.get = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock()))
+        mock_session.get = AsyncMock(return_value=mock_response)
 
         params, content_hash = await async_fetch_params_from_github(mock_session)
 
@@ -411,9 +412,10 @@ class TestGitHubParamsUpdate:
         mock_response = AsyncMock()
         mock_response.status = 200
         mock_response.read = AsyncMock(return_value=b'invalid json {{{')
+        mock_response.release = MagicMock()
 
         mock_session = MagicMock()
-        mock_session.get = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock()))
+        mock_session.get = AsyncMock(return_value=mock_response)
 
         params, content_hash = await async_fetch_params_from_github(mock_session)
 

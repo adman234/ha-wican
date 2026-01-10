@@ -10,14 +10,18 @@ the local cache if changes are detected.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import inspect
 import json
 import logging
 from pathlib import Path
+import re
 from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
     from typing import Final
+
     from aiohttp import ClientSession
 
 _LOGGER = logging.getLogger(__name__)
@@ -186,8 +190,8 @@ def _load_params() -> dict[str, ParamDefinition]:
     except FileNotFoundError:
         _LOGGER.warning("params.json not found at %s, using empty defaults", params_file)
         return {}
-    except json.JSONDecodeError as err:
-        _LOGGER.error("Failed to parse params.json: %s", err)
+    except json.JSONDecodeError:
+        _LOGGER.exception("Failed to parse params.json")
         return {}
 
 
@@ -196,11 +200,15 @@ def _compute_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _get_current_params_hash() -> str | None:
-    """Get hash of current params.json file."""
+async def _async_get_current_params_hash() -> str | None:
+    """Get hash of current params.json file.
+
+    This performs file IO in a background thread to avoid blocking the event loop.
+    """
     params_file = _get_params_file_path()
     try:
-        return _compute_hash(params_file.read_bytes())
+        content = await asyncio.to_thread(params_file.read_bytes)
+        return _compute_hash(content)
     except (FileNotFoundError, OSError):
         return None
 
@@ -216,11 +224,10 @@ async def async_fetch_params_from_github(
     Returns:
         Tuple of (parsed params dict, content hash) or (None, None) on failure.
     """
-    import asyncio
-
     try:
         async with asyncio.timeout(GITHUB_FETCH_TIMEOUT):
-            async with session.get(PARAMS_GITHUB_URL) as response:
+            response = await session.get(PARAMS_GITHUB_URL)
+            try:
                 if response.status != 200:
                     _LOGGER.debug(
                         "Failed to fetch params.json from GitHub: HTTP %s",
@@ -233,17 +240,22 @@ async def async_fetch_params_from_github(
 
                 try:
                     data = json.loads(content.decode("utf-8"))
+                except json.JSONDecodeError as err:
+                    _LOGGER.warning("Failed to parse GitHub params.json: %s", err)
+                    return None, None
+                else:
                     _LOGGER.debug(
                         "Fetched %d parameters from GitHub (hash: %s...)",
                         len(data),
                         content_hash[:8],
                     )
                     return data, content_hash
-                except json.JSONDecodeError as err:
-                    _LOGGER.warning("Failed to parse GitHub params.json: %s", err)
-                    return None, None
+            finally:
+                release_result = response.release()
+                if inspect.isawaitable(release_result):
+                    await release_result
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         _LOGGER.debug("Timeout fetching params.json from GitHub")
         return None, None
     except Exception as err:
@@ -260,10 +272,8 @@ async def async_update_params_from_github(session: ClientSession) -> bool:
     Returns:
         True if params were updated, False otherwise.
     """
-    global _PARAMS
-
     # Get current hash
-    current_hash = _get_current_params_hash()
+    current_hash = await _async_get_current_params_hash()
 
     # Fetch from GitHub
     new_params, new_hash = await async_fetch_params_from_github(session)
@@ -280,12 +290,12 @@ async def async_update_params_from_github(session: ClientSession) -> bool:
     # Write updated params to file
     params_file = _get_params_file_path()
     try:
-        # Ensure data directory exists
-        params_file.parent.mkdir(parents=True, exist_ok=True)
+        def _write_params() -> None:
+            params_file.parent.mkdir(parents=True, exist_ok=True)
+            with params_file.open("w", encoding="utf-8") as f:
+                json.dump(new_params, f, indent=2, ensure_ascii=False)
 
-        # Write with pretty formatting for readability
-        with params_file.open("w", encoding="utf-8") as f:
-            json.dump(new_params, f, indent=2, ensure_ascii=False)
+        await asyncio.to_thread(_write_params)
 
         _LOGGER.info(
             "Updated params.json from GitHub: %d parameters (hash: %s...)",
@@ -296,17 +306,15 @@ async def async_update_params_from_github(session: ClientSession) -> bool:
         # Update in-memory params
         _PARAMS.clear()
         _PARAMS.update(new_params)
-
-        return True
-
     except OSError as err:
         _LOGGER.warning("Failed to write updated params.json: %s", err)
         return False
+    else:
+        return True
 
 
 def reload_params() -> None:
     """Reload params from disk (useful after update)."""
-    global _PARAMS
     new_params = _load_params()
     _PARAMS.clear()
     _PARAMS.update(new_params)
@@ -577,16 +585,14 @@ def _normalize_param_name(param_name: str) -> str:
                 return _PID_ALIASES[suffix]
             # Try without the suffix alias (convert to uppercase with underscores)
             # e.g., "enginerpm" → "ENGINE_RPM"
-            import re
             # Insert underscore before uppercase letters in original (for CamelCase)
             original_suffix = param_name[3:]
-            converted = re.sub(r'([a-z])([A-Z])', r'\1_\2', original_suffix).upper()
+            converted = re.sub(r"([a-z])([A-Z])", r"\1_\2", original_suffix).upper()
             if converted in _PARAMS:
                 return converted
 
     # Last resort: convert CamelCase to UPPER_SNAKE_CASE
-    import re
-    converted = re.sub(r'([a-z])([A-Z])', r'\1_\2', param_name).upper()
+    converted = re.sub(r"([a-z])([A-Z])", r"\1_\2", param_name).upper()
     if converted in _PARAMS:
         return converted
 

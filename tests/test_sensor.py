@@ -282,7 +282,7 @@ async def test_sensor_state_restoration_with_normalization(hass: HomeAssistant) 
         await hass.async_block_till_done()
     
     # Check that sensor was created and has restored state
-    state = hass.states.get("sensor.wican_device_batt_voltage")
+    state = hass.states.get("sensor.wican_test_batt_voltage")
     assert state is not None
 
 

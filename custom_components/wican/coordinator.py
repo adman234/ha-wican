@@ -6,13 +6,14 @@ from datetime import timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN
 
 if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
     from . import WiCANConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,7 +62,7 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         Entities will be created and will update when the first webhook push arrives.
         """
         _LOGGER.debug(
-            "First refresh for WiCAN coordinator (push-based, no polling required)"
+            "First refresh for WiCAN coordinator (push-based, no polling required)",
         )
         # Initialize with empty data - webhook pushes will populate it
         await self.async_refresh()
@@ -132,31 +133,30 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def normalize_sensor_value(self, key: str, raw_value: Any) -> Any:
         """Normalize raw sensor values.
-        
+
         Converts string values with unit suffixes to proper numeric types.
         This centralizes value normalization logic for consistency.
-        
+
         Args:
             key: Sensor key (e.g., "batt_voltage")
             raw_value: Raw value from device
-            
+
         Returns:
             Normalized value suitable for Home Assistant
         """
         if raw_value is None:
             return None
-            
+
         # Battery voltage: strip "V" suffix and convert to float
-        if key == "batt_voltage" and isinstance(raw_value, str):
-            if raw_value.endswith("V"):
-                try:
-                    return float(raw_value[:-1])
-                except ValueError:
-                    _LOGGER.warning(
-                        "Failed to parse battery voltage: %s", raw_value
-                    )
-                    return raw_value
-        
+        if key == "batt_voltage" and isinstance(raw_value, str) and raw_value.endswith("V"):
+            try:
+                return float(raw_value[:-1])
+            except ValueError:
+                _LOGGER.warning(
+                    "Failed to parse battery voltage: %s", raw_value,
+                )
+                return raw_value
+
         # Generic numeric string conversion
         if isinstance(raw_value, str):
             # Check if it looks like a number
@@ -166,7 +166,7 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     return float(raw_value) if "." in raw_value else int(raw_value)
                 except ValueError:
                     pass
-        
+
         return raw_value
 
     def get_sensor_value(self, sensor_key: str) -> Any | None:

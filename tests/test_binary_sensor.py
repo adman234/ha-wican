@@ -247,5 +247,5 @@ async def test_binary_sensor_none_checks(hass: HomeAssistant, hass_client) -> No
     await hass.async_block_till_done()
     
     # Verify entities exist and didn't crash
-    state = hass.states.get("binary_sensor.wican_device_ble_status")
+    state = hass.states.get("binary_sensor.wican_test_ble_status")
     assert state is not None

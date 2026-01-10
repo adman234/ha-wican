@@ -10,14 +10,14 @@
     "description": "AC Charging Current",
     "settings": {
       "unit": "A",
-      "class": "current"
+      "class": "battery"
     }
   },
   "AC_C_V": {
     "description": "AC Charging Voltage",
     "settings": {
       "unit": "V",
-      "class": "voltage"
+      "class": "battery"
     }
   },
   "AC_P": {
@@ -106,7 +106,7 @@
   "ENGINE_OIL_PRES": {
     "description": "Engine Oil Pressure",
     "settings": {
-      "unit": "kPa",
+      "unit": "KPa",
       "class": "pressure"
     }
   },
@@ -121,7 +121,7 @@
     "description": "Engine RPM",
     "settings": {
       "unit": "RPM",
-      "class": "none"
+      "class": "frequency"
     }
   },
   "FUEL": {
@@ -169,7 +169,7 @@
   "GEAR": {
     "description": "Which gear is the car in",
     "settings": {
-      "unit": "",
+      "unit": "none",
       "class": "none"
     }
   },
@@ -184,7 +184,7 @@
     "description": "High Voltage Battery Power Available",
     "settings": {
       "unit": "kW",
-      "class": "power"
+      "class": "battery"
     }
   },
   "HV_CAPACITY": {
@@ -198,14 +198,14 @@
     "description": "HV Battery capacity in kWh",
     "settings": {
       "unit": "kWh",
-      "class": "energy"
+      "class": "none"
     }
   },
   "HV_CAPACITY_R": {
     "description": "HV Battery capacity Remaining",
     "settings": {
       "unit": "kWh",
-      "class": "energy"
+      "class": "none"
     }
   },
   "HV_C_D_MAX": {
@@ -218,7 +218,7 @@
   "HV_C_D_MAX_NO": {
     "description": "HV Battery which cell has highest deterioration",
     "settings": {
-      "unit": "",
+      "unit": "none",
       "class": "none"
     }
   },
@@ -232,7 +232,7 @@
   "HV_C_D_MIN_NO": {
     "description": "HV Battery which cell has lowest deterioration",
     "settings": {
-      "unit": "",
+      "unit": "none",
       "class": "none"
     }
   },
@@ -246,7 +246,7 @@
   "HV_C_V_MAX_NO": {
     "description": "HV Battery which cell is highest",
     "settings": {
-      "unit": "",
+      "unit": "none",
       "class": "none"
     }
   },
@@ -260,7 +260,7 @@
   "HV_C_V_MIN_NO": {
     "description": "HV Battery which cell is lowest",
     "settings": {
-      "unit": "",
+      "unit": "none",
       "class": "none"
     }
   },
@@ -360,22 +360,15 @@
   "KWH_CHARGED": {
     "description": "Total kWh Charged",
     "settings": {
-      "unit": "kWh",
-      "class": "energy"
-    }
-  },
-  "LTFT": {
-    "description": "Long Term Fuel Trim",
-    "settings": {
-      "unit": "%",
-      "class": "none"
+      "unit": "kwh",
+      "class": "battery"
     }
   },
   "LV_V": {
     "description": "12v Battery Voltage",
     "settings": {
       "unit": "V",
-      "class": "voltage"
+      "class": "battery"
     }
   },
   "MAF": {
@@ -417,12 +410,12 @@
   "PARK_BRAKE": {
     "description": "Is the park brake on?",
     "settings": {
-      "unit": "",
+      "unit": "none",
       "class": "none",
       "type": "binary_sensor"
     }
   },
-  "PCM_DESIRED_BOOST": {
+  "PCM_Desired_Boost": {
     "description": "Desired Boost Pressure",
     "settings": {
       "unit": "kPa",
@@ -431,16 +424,16 @@
       "max": "1000"
     }
   },
-  "PCM_FUEL_RATE": {
+  "PCM_Fuel_Rate": {
     "description": "Fuel Consumption Rate",
     "settings": {
       "unit": "g/s",
-      "class": "none",
+      "class": "volume_flow_rate",
       "min": "0",
       "max": "255"
     }
   },
-  "PCM_GEAR": {
+  "PCM_Gear": {
     "description": "Current Transmission Gear",
     "settings": {
       "unit": "",
@@ -449,7 +442,7 @@
       "max": "100"
     }
   },
-  "PCM_KNOCK_COUNT": {
+  "PCM_Knock_Count": {
     "description": "Engine Knock Count",
     "settings": {
       "unit": "",
@@ -458,25 +451,25 @@
       "max": "255"
     }
   },
-  "PCM_LEARNED_OCTANE_RATIO": {
+  "PCM_Learned_Octane_Ratio": {
     "description": "Learned Octane Ratio",
     "settings": {
       "unit": "%",
-      "class": "none",
+      "class": "percentage",
       "min": "-100",
       "max": "100"
     }
   },
-  "PCM_OIL_LIFE": {
+  "PCM_Oil_Life": {
     "description": "Engine Oil Life Remaining",
     "settings": {
       "unit": "%",
-      "class": "none",
+      "class": "percentage",
       "min": "0",
       "max": "100"
     }
   },
-  "PCM_TRANSMISSION_TEMP": {
+  "PCM_Transmission_Temp": {
     "description": "Transmission Temperature",
     "settings": {
       "unit": "°C",
@@ -485,11 +478,11 @@
       "max": "200"
     }
   },
-  "PCM_WASTEGATE": {
+  "PCM_Wastegate": {
     "description": "Wastegate Position",
     "settings": {
       "unit": "%",
-      "class": "none",
+      "class": "percentage",
       "min": "0",
       "max": "100"
     }
@@ -511,7 +504,7 @@
   "READY": {
     "description": "Is the car ready?",
     "settings": {
-      "unit": "",
+      "unit": "none",
       "class": "none",
       "type": "binary_sensor"
     }
@@ -577,7 +570,7 @@
     }
   },
   "THROTTLE": {
-    "description": "Throttle position",
+    "description": "throttle position",
     "settings": {
       "unit": "%",
       "class": "none"
@@ -587,11 +580,11 @@
     "description": "Ambient Temperature",
     "settings": {
       "unit": "°C",
-      "class": "temperature"
+      "class": "none"
     }
   },
   "TRAN_F_TEMP": {
-    "description": "Transmission Fluid Temp",
+    "description": "Transmission Fluid TEmp",
     "settings": {
       "unit": "°C",
       "class": "temperature"

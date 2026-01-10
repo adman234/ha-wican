@@ -1,16 +1,17 @@
 from dataclasses import dataclass, field
-from typing import Optional, List
+
 from homeassistant.components.binary_sensor import BinarySensorEntityDescription
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntityDescription
 from homeassistant.helpers.entity import EntityCategory
-from homeassistant.components.sensor import SensorEntityDescription, SensorDeviceClass
+
 
 @dataclass
 class WiCANBinarySensorEntityDescription(BinarySensorEntityDescription):
-    extra_attributes: Optional[List[str]] = field(default_factory=list)
+    extra_attributes: list[str] | None = field(default_factory=list)
 
 @dataclass
 class WiCANSensorEntityDescription(SensorEntityDescription):
-    extra_attributes: Optional[List[str]] = field(default_factory=list)
+    extra_attributes: list[str] | None = field(default_factory=list)
 
 SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
     WiCANSensorEntityDescription(
@@ -54,7 +55,7 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
         translation_key="uptime",
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:clock-outline",
-    )
+    ),
 )
 
 BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
