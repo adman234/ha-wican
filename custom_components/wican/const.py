@@ -41,3 +41,6 @@ OTA_FORM_FIELD = "ota_file"
 
 # Update Coordinator
 GITHUB_RELEASES_UPDATE_INTERVAL = 3600  # 1 hour
+
+# WiCAN Data Coordinator (push-based fallback polling)
+WICAN_DATA_UPDATE_INTERVAL = 300  # seconds (5 minutes)

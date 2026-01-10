@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import DOMAIN
+from .const import DOMAIN, WICAN_DATA_UPDATE_INTERVAL
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -20,7 +20,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # WiCAN is push-based via webhooks, so we don't need frequent polling
 # This is just for fallback/health check
-UPDATE_INTERVAL = timedelta(minutes=5)
+UPDATE_INTERVAL = timedelta(seconds=WICAN_DATA_UPDATE_INTERVAL)
 
 
 class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
