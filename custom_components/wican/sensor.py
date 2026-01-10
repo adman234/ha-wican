@@ -1,6 +1,7 @@
-"""Sensor platform for Sleep as Android integration."""
+"""Sensor platform for WiCAN integration."""
 
 from __future__ import annotations
+
 import logging
 
 from homeassistant.components.sensor import (
@@ -15,33 +16,122 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from . import WiCANConfigEntry
 from .entity import WiCANEntity
 from .const import DOMAIN
+from .param_loader import (
+    get_param_unit,
+    get_param_device_class,
+    get_param_icon,
+    is_valid_device_class,
+    is_valid_class_unit_combo,
+)
 from .attributes import SENSOR_DESCRIPTIONS, get_sensor_attributes, WiCANSensorEntityDescription
 
-LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
 
-def _normalize_device_class(device_class: str | SensorDeviceClass | None, unit: str | None) -> SensorDeviceClass | None:
-    """Convert string device_class to enum and drop invalid combos (e.g. rpm + speed).
+def _get_pid_unit(pid_key: str, config_unit: str | None = None) -> str | None:
+    """Determine the appropriate unit for a PID sensor.
 
-    TODO(meatpi): This is a temporary guard to avoid mismatched unit/device_class
-    combinations leaking into HA. Replace with a canonical unit-to-device-class
-    validation map and stricter config validation so we can surface clear errors
-    and avoid silently dropping classes.
+    Priority order:
+    1. Config unit from device (if valid/non-empty)
+    2. Fallback from params.json lookup
+
+    This ensures consistent units even if device sometimes sends None.
+
+    Args:
+        pid_key: The PID sensor key/name from the device.
+        config_unit: Unit from device config (may be None/empty/"none").
+
+    Returns:
+        Unit string (e.g., "km/h", "°C") or None if no match.
     """
-    normalized = device_class
+    # Normalize "none", empty string, None to actual None
+    if config_unit in ("none", "", None):
+        config_unit = None
+
+    # If device provided a valid unit, use it
+    if config_unit is not None:
+        return config_unit
+
+    # Fallback to params.json lookup
+    return get_param_unit(pid_key)
+
+
+def _get_pid_icon(
+    pid_key: str,
+    device_class: SensorDeviceClass | None,
+) -> str:
+    """Determine the appropriate icon for a PID sensor.
+
+    Args:
+        pid_key: The PID sensor key/name from the device.
+        device_class: The resolved SensorDeviceClass, if any.
+
+    Returns:
+        MDI icon string (e.g., "mdi:engine").
+    """
+    device_class_str = None
+    if device_class is not None:
+        device_class_str = device_class.value if isinstance(device_class, SensorDeviceClass) else str(device_class)
+    return get_param_icon(pid_key, device_class_str)
+
+
+def _normalize_device_class(
+    device_class: str | SensorDeviceClass | None,
+    unit: str | None,
+    pid_key: str | None = None,
+) -> SensorDeviceClass | None:
+    """Convert and validate device_class, filtering invalid combinations.
+
+    Handles multiple validation scenarios:
+    1. Invalid/unknown device class strings → None
+    2. Mismatched class+unit combinations (e.g., speed+rpm) → None
+    3. Fallback to params.json if no class provided
+
+    Args:
+        device_class: Device class from config (string or enum).
+        unit: Unit of measurement for validation.
+        pid_key: Optional PID key for fallback lookup.
+
+    Returns:
+        Valid SensorDeviceClass enum or None.
+    """
+    # Handle "none" string as None
+    if isinstance(device_class, str) and device_class.lower() == "none":
+        device_class = None
+
+    # Try to get fallback from params.json if no class provided
+    if device_class is None and pid_key:
+        device_class = get_param_device_class(pid_key)
+
+    # Validate the device class is known to Home Assistant
     if isinstance(device_class, str):
+        if not is_valid_device_class(device_class):
+            _LOGGER.debug(
+                "Invalid device class '%s' for %s, ignoring",
+                device_class, pid_key or "sensor"
+            )
+            return None
         try:
-            normalized = SensorDeviceClass(device_class)
+            device_class = SensorDeviceClass(device_class)
         except ValueError:
-            normalized = None
-    if (
-        normalized == SensorDeviceClass.SPEED
-        and unit is not None
-        and unit.lower().endswith("rpm")
-    ):
-        return None
-    return normalized
+            _LOGGER.debug(
+                "Unknown SensorDeviceClass '%s' for %s, ignoring",
+                device_class, pid_key or "sensor"
+            )
+            return None
+
+    # Validate class+unit combination
+    if device_class is not None and unit is not None:
+        dc_str = device_class.value if isinstance(device_class, SensorDeviceClass) else str(device_class)
+        if not is_valid_class_unit_combo(dc_str, unit):
+            _LOGGER.debug(
+                "Invalid device_class+unit combo: %s + %s for %s, dropping device_class",
+                dc_str, unit, pid_key or "sensor"
+            )
+            return None
+
+    return device_class
 
 
 DYNAMIC_PID_SENSORS = {}
@@ -66,23 +156,23 @@ async def async_setup_entry(
     restored_entities = []
     for pid_key in pid_keys:
         config = pid_config.get(pid_key, {})
-        unit = config.get("unit")
-        # Handle unit normalization: empty string, "none", or None all become None
-        if unit in ("none", "", None):
-            unit = None
-        device_class = _normalize_device_class(config.get("class"), unit)
-        
-        LOGGER.debug(
-            "Restoring PID sensor %s with unit=%s, device_class=%s",
-            pid_key, unit, device_class
+        # Use _get_pid_unit with config unit for consistent fallback handling
+        unit = _get_pid_unit(pid_key, config.get("unit"))
+        device_class = _normalize_device_class(config.get("class"), unit, pid_key)
+        icon = _get_pid_icon(pid_key, device_class)
+
+        _LOGGER.debug(
+            "Restoring PID sensor %s with unit=%s, device_class=%s, icon=%s",
+            pid_key, unit, device_class, icon
         )
-        
+
         entity_description = WiCANSensorEntityDescription(
             key=pid_key,
             name=pid_key,
             device_class=device_class,
             native_unit_of_measurement=unit,
             state_class="measurement",
+            icon=icon,
         )
         entity = WiCANPidSensorEntity(config_entry, pid_key, entity_description)
         DYNAMIC_PID_SENSORS[config_entry.entry_id][pid_key] = entity
@@ -102,22 +192,22 @@ async def async_setup_entry(
         for pid_key in pid_data:
             if pid_key not in sensors:
                 config = pid_config.get(pid_key, {})
-                unit = config.get("unit")
-                # Handle unit normalization: empty string, "none", or None all become None
-                if unit in ("none", "", None):
-                    unit = None
-                device_class = _normalize_device_class(config.get("class"), unit)
-                
-                LOGGER.debug(
-                    "Creating new PID sensor %s with unit=%s, device_class=%s",
-                    pid_key, unit, device_class
+                # Use _get_pid_unit with config unit for consistent fallback handling
+                unit = _get_pid_unit(pid_key, config.get("unit"))
+                device_class = _normalize_device_class(config.get("class"), unit, pid_key)
+                icon = _get_pid_icon(pid_key, device_class)
+
+                _LOGGER.debug(
+                    "Creating new PID sensor %s with unit=%s, device_class=%s, icon=%s",
+                    pid_key, unit, device_class, icon
                 )
-                
+
                 entity_description = WiCANSensorEntityDescription(
                     key=pid_key,
                     name=pid_key,
                     device_class=device_class,
                     native_unit_of_measurement=unit,
+                    icon=icon,
                 )
                 entity = WiCANPidSensorEntity(config_entry, pid_key, entity_description)
                 new_entities.append(entity)
@@ -215,7 +305,7 @@ class WiCANPidSensorEntity(WiCANEntity, RestoreSensor):
     entity_description: WiCANSensorEntityDescription
 
     def __init__(self, config_entry, pid_key, entity_description):
-        LOGGER.warning("Creating WiCANPidSensorEntity for PID: %s", pid_key)
+        _LOGGER.debug("Creating WiCANPidSensorEntity for PID: %s", pid_key)
         super().__init__(config_entry, entity_description)
         self._pid_key = pid_key
         self._attr_unique_id = f"{config_entry.entry_id}_pid_{pid_key}"

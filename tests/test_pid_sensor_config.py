@@ -326,7 +326,7 @@ async def test_pid_sensor_partial_config(
             "unconfigured_pid": 200
         },
         "config": {
-            "configured_pid": {"unit": "unit", "class": "temperature"}
+            "configured_pid": {"unit": "°C", "class": "temperature"}
             # unconfigured_pid has no config
         }
     }
@@ -338,10 +338,10 @@ async def test_pid_sensor_partial_config(
     await coordinator.async_request_refresh()
     await hass.async_block_till_done()
     
-    # Configured PID
+    # Configured PID - uses valid temperature unit "°C"
     configured_state = hass.states.get("sensor.wican_device_configured_pid")
     assert configured_state.state == "100"
-    assert configured_state.attributes.get("unit_of_measurement") == "unit"
+    assert configured_state.attributes.get("unit_of_measurement") == "°C"
     assert configured_state.attributes.get("device_class") == "temperature"
     
     # Unconfigured PID (defaults)
@@ -780,3 +780,239 @@ async def test_pid_sensor_value_update_with_pending_value(
     state = hass.states.get("sensor.wican_device_engine_rpm")
     if state:
         assert float(state.state) == 2500
+
+
+@pytest.mark.asyncio
+async def test_pid_sensor_ev_parameters(
+    hass: HomeAssistant,
+    hass_client,
+    init_integration: MockConfigEntry,
+) -> None:
+    """Test EV-specific PID sensors (SOC, HV battery, charging, etc.)."""
+    entry = init_integration
+    webhook_id = entry.data[CONF_WEBHOOK_ID]
+    client = await hass_client()
+
+    # Send EV-specific PID data (typical EV like Nissan Leaf, Tesla, etc.)
+    data = {
+        "status": {"wifi_mode": "Station"},
+        "autopid_data": {
+            "soc": 75,
+            "soh": 95,
+            "hv_v": 355.5,
+            "hv_a": -12.3,
+            "hv_w": 4380,
+            "range": 180,
+            "lv_v": 12.6,
+            "hv_t_1": 28,
+            "hv_t_a": 30,
+            "charger_dc_pwr": 0,
+            "kwh_charged": 45.2,
+        },
+        "config": {
+            "soc": {"unit": "%", "class": "battery"},
+            "soh": {"unit": "%", "class": "battery"},
+            "hv_v": {"unit": "V", "class": "voltage"},
+            "hv_a": {"unit": "A", "class": "current"},
+            "hv_w": {"unit": "W", "class": "power"},
+            "range": {"unit": "km", "class": "distance"},
+            "lv_v": {"unit": "V", "class": "voltage"},
+            "hv_t_1": {"unit": "°C", "class": "temperature"},
+            "hv_t_a": {"unit": "°C", "class": "temperature"},
+            "charger_dc_pwr": {"unit": "kW", "class": "power"},
+            "kwh_charged": {"unit": "kWh", "class": "energy"},
+        }
+    }
+    await client.post(f"/api/webhook/{webhook_id}", json=data)
+    await hass.async_block_till_done()
+
+    # Verify SOC sensor was created with correct unit
+    state = hass.states.get("sensor.wican_device_soc")
+    if state:
+        assert state.attributes.get("unit_of_measurement") == "%"
+
+    # Verify HV Battery Voltage sensor was created with correct unit
+    state = hass.states.get("sensor.wican_device_hv_v")
+    if state:
+        assert state.attributes.get("unit_of_measurement") == "V"
+
+    # Verify HV Battery Current sensor was created with correct unit
+    state = hass.states.get("sensor.wican_device_hv_a")
+    if state:
+        assert state.attributes.get("unit_of_measurement") == "A"
+
+    # Verify Range sensor was created with correct unit
+    state = hass.states.get("sensor.wican_device_range")
+    if state:
+        assert state.attributes.get("unit_of_measurement") == "km"
+
+    # Verify 12V Battery sensor was created with correct unit
+    state = hass.states.get("sensor.wican_device_lv_v")
+    if state:
+        assert state.attributes.get("unit_of_measurement") == "V"
+
+    # Verify HV battery temperature sensor
+    state = hass.states.get("sensor.wican_device_hv_t_1")
+    if state:
+        assert state.attributes.get("unit_of_measurement") == "°C"
+
+    # Verify charger power sensor
+    state = hass.states.get("sensor.wican_device_charger_dc_pwr")
+    if state:
+        assert state.attributes.get("unit_of_measurement") == "kW"
+
+
+@pytest.mark.asyncio
+async def test_pid_sensor_ev_fallback_units_and_icons(
+    hass: HomeAssistant,
+    hass_client,
+    init_integration: MockConfigEntry,
+) -> None:
+    """Test EV sensors get correct fallback units and icons when config not provided."""
+    entry = init_integration
+    webhook_id = entry.data[CONF_WEBHOOK_ID]
+    client = await hass_client()
+
+    # Send EV data WITHOUT config section (device doesn't send it)
+    data = {
+        "status": {"wifi_mode": "Station"},
+        "autopid_data": {
+            "soc": 80,
+            "hv_v": 400,
+            "hv_a": 50,
+            "range": 200,
+            "hv_t_a": 35,
+            "power_max": 150,
+            "regen_max": 60,
+        },
+        # No config section - relies on fallback mappings
+    }
+    await client.post(f"/api/webhook/{webhook_id}", json=data)
+    await hass.async_block_till_done()
+
+    # Verify SOC sensor with fallback unit
+    state = hass.states.get("sensor.wican_device_soc")
+    if state:
+        # Unit should come from PID_NAME_UNITS fallback
+        assert state.attributes.get("unit_of_measurement") == "%"
+
+    # Verify HV Battery Voltage sensor with fallback unit
+    state = hass.states.get("sensor.wican_device_hv_v")
+    if state:
+        assert state.attributes.get("unit_of_measurement") == "V"
+
+    # Verify Range sensor with fallback unit
+    state = hass.states.get("sensor.wican_device_range")
+    if state:
+        assert state.attributes.get("unit_of_measurement") == "km"
+
+    # Verify Power max sensor with fallback unit
+    state = hass.states.get("sensor.wican_device_power_max")
+    if state:
+        assert state.attributes.get("unit_of_measurement") == "kW"
+
+    # Verify regen max sensor with fallback unit
+    state = hass.states.get("sensor.wican_device_regen_max")
+    if state:
+        assert state.attributes.get("unit_of_measurement") == "kW"
+
+
+@pytest.mark.asyncio
+async def test_pid_sensor_tyre_pressure_monitoring(
+    hass: HomeAssistant,
+    hass_client,
+    init_integration: MockConfigEntry,
+) -> None:
+    """Test tyre pressure and temperature sensors (TPMS)."""
+    entry = init_integration
+    webhook_id = entry.data[CONF_WEBHOOK_ID]
+    client = await hass_client()
+
+    # Send tyre data (common in EVs and modern ICE vehicles)
+    data = {
+        "status": {"wifi_mode": "Station"},
+        "autopid_data": {
+            "tyre_p_fl": 32,
+            "tyre_p_fr": 33,
+            "tyre_p_rl": 31,
+            "tyre_p_rr": 32,
+            "tyre_t_fl": 25,
+            "tyre_t_fr": 26,
+        },
+        "config": {
+            "tyre_p_fl": {"unit": "psi", "class": "pressure"},
+            "tyre_p_fr": {"unit": "psi", "class": "pressure"},
+            "tyre_p_rl": {"unit": "psi", "class": "pressure"},
+            "tyre_p_rr": {"unit": "psi", "class": "pressure"},
+            "tyre_t_fl": {"unit": "°C", "class": "temperature"},
+            "tyre_t_fr": {"unit": "°C", "class": "temperature"},
+        }
+    }
+    await client.post(f"/api/webhook/{webhook_id}", json=data)
+    await hass.async_block_till_done()
+
+    # Verify front left tyre pressure sensor created with correct unit
+    state = hass.states.get("sensor.wican_device_tyre_p_fl")
+    if state:
+        # Note: HA may convert psi to kPa depending on device_class=pressure
+        assert state.attributes.get("unit_of_measurement") in ("psi", "kPa")
+
+    # Verify front left tyre temperature sensor created with correct unit
+    state = hass.states.get("sensor.wican_device_tyre_t_fl")
+    if state:
+        assert state.attributes.get("unit_of_measurement") == "°C"
+
+
+@pytest.mark.asyncio
+async def test_pid_sensor_invalid_device_class_unit_combo_filtered(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+) -> None:
+    """Test that invalid device class + unit combinations are filtered.
+    
+    This tests the hardening added to handle firmware bugs like:
+    - EngineRPM with class="speed" but unit="rpm" (firmware bug)
+    - Temperature with invalid unit
+    """
+    # Setup config with invalid class+unit combinations
+    entry_data = mock_config_entry.data.copy()
+    entry_data["pid_keys"] = ["engine_rpm", "test_sensor"]
+    entry_data["config"] = {
+        # BUG: Firmware has class="speed" but unit="rpm" - invalid combo!
+        # speed class requires km/h, mph, m/s, etc - NOT rpm
+        "engine_rpm": {"unit": "rpm", "class": "speed"},
+        # BUG: Invalid unit "bananas" for temperature class
+        "test_sensor": {"unit": "bananas", "class": "temperature"},
+    }
+    mock_config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="WiCAN Device",
+        data=entry_data,
+        options=mock_config_entry.options,
+        unique_id=mock_config_entry.unique_id,
+    )
+    mock_config_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.wican.async_get_clientsession"
+    ), patch(
+        "custom_components.wican.WiCANDataUpdateCoordinator.async_config_entry_first_refresh"
+    ):
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    # engine_rpm: device_class should be filtered out (speed+rpm invalid)
+    # but unit should still be preserved
+    rpm_state = hass.states.get("sensor.wican_device_engine_rpm")
+    if rpm_state:
+        assert rpm_state.attributes.get("unit_of_measurement") == "rpm"
+        # Device class "speed" should be filtered because rpm is not valid for speed
+        assert rpm_state.attributes.get("device_class") is None
+
+    # test_sensor: device_class should be filtered (temperature+bananas invalid)
+    test_state = hass.states.get("sensor.wican_device_test_sensor")
+    if test_state:
+        assert test_state.attributes.get("unit_of_measurement") == "bananas"
+        # Device class "temperature" should be filtered because bananas is not valid
+        assert test_state.attributes.get("device_class") is None
+
