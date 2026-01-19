@@ -14,5 +14,8 @@ bruno/
 # Python virtual environment
 .venv/
 
+# Coverage artifacts
+.coverage
+
 *.md
 !README.md

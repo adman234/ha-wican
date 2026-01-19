@@ -5,28 +5,27 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
-import async_timeout
-
 from homeassistant.components.update import (
+    UpdateDeviceClass,
     UpdateEntity,
     UpdateEntityDescription,
     UpdateEntityFeature,
-    UpdateDeviceClass,
 )
-from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import WiCANConfigEntry
 from .const import (
     DOMAIN,
     FIRMWARE_DOWNLOAD_TIMEOUT,
     FIRMWARE_UPDATE_REBOOT_DELAY,
     FIRMWARE_UPLOAD_TIMEOUT,
+    GITHUB_API_RELEASES_URL,
+    GITHUB_API_TIMEOUT,
+    GITHUB_OWNER,
+    GITHUB_REPO,
     OTA_ENDPOINT,
     OTA_FORM_FIELD,
 )
@@ -37,13 +36,19 @@ from .exceptions import (
     FirmwareVersionNotFoundError,
 )
 
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+    from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+    from . import WiCANConfigEntry
+
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1  # Only one update at a time
 
 
 async def async_setup_entry(
-    hass: HomeAssistant,
+    _hass: HomeAssistant,
     entry: WiCANConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
@@ -77,12 +82,11 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
 
     def _async_handle_event(self, webhook_id: str, data: dict[str, str]) -> None:
         """Handle WiCAN webhook event.
-        
+
         Update entity doesn't need webhook events - version info comes from coordinator.
         This is required by WiCANEntity base class.
         """
         # No action needed - version info updated via coordinator
-        pass
 
     @property
     def installed_version(self) -> str | None:
@@ -104,11 +108,11 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
 
     def _normalize_version(self, version: str | None) -> str | None:
         """Normalize version string by removing device-specific suffixes.
-        
+
         Device firmware versions are reported without suffixes (e.g., "4.46"),
         but GitHub releases include suffixes (e.g., "4.45p" for PRO, "4.13u" for USB).
         Strip these suffixes to enable proper version comparison.
-        
+
         Examples:
             "4.45p" -> "4.45"  (PRO)
             "4.13u" -> "4.13"  (USB)
@@ -136,7 +140,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
         return body[:500] + "..." if len(body) > 500 else body
 
     async def async_install(
-        self, version: str | None, backup: bool, **kwargs: Any
+        self, version: str | None, _backup: bool, **_kwargs: Any,
     ) -> None:
         """Install firmware update."""
         if self._update_in_progress:
@@ -185,7 +189,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
             FirmwareUploadError,
             FirmwareVersionNotFoundError,
         ) as err:
-            _LOGGER.error("Firmware update failed: %s", err)
+            _LOGGER.exception("Firmware update failed")
             raise HomeAssistantError(str(err)) from err
         finally:
             self._update_in_progress = False
@@ -194,59 +198,52 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
 
     async def _fetch_github_release(self, version: str) -> dict[str, Any]:
         """Fetch a specific release from GitHub API.
-        
+
         Args:
             version: Version to fetch (normalized, without 'v' prefix or suffixes)
-            
+
         Returns:
             Release data dict from GitHub API
-            
+
         """
-        from .const import (
-            GITHUB_API_RELEASES_URL,
-            GITHUB_API_TIMEOUT,
-            GITHUB_OWNER,
-            GITHUB_REPO,
-        )
-        
         url = GITHUB_API_RELEASES_URL.format(
             owner=GITHUB_OWNER,
             repo=GITHUB_REPO,
         )
-        
+
         session = async_get_clientsession(self.hass)
-        
+
         try:
-            async with async_timeout.timeout(GITHUB_API_TIMEOUT):
+            async with asyncio.timeout(GITHUB_API_TIMEOUT):
                 response = await session.get(
                     url,
                     headers={"Accept": "application/vnd.github.v3+json"},
                 )
                 response.raise_for_status()
                 releases = await response.json()
-            
+
             # Determine device type for filtering
             hw_version = self.config_entry.data.get("hw_version", "").lower()
             is_pro = "pro" in hw_version
-            
+
             # Search for matching release
             # Version can have suffixes in GitHub (4.45p, 4.13u) but we get normalized version
             for release in releases:
                 if release.get("prerelease", False):
                     continue
-                    
+
                 tag_name = release.get("tag_name", "").lstrip("v")
                 normalized_tag = self._normalize_version(tag_name)
-                
+
                 # Check if this release matches the requested version
                 if normalized_tag != version:
                     continue
-                
+
                 # Check if this release is for the correct device type
                 name = str(release.get("name", "")).upper()
                 tag = str(tag_name).upper()
                 is_pro_release = "PRO" in name or "P" in tag
-                
+
                 if is_pro_release == is_pro:
                     _LOGGER.info(
                         "Found GitHub release %s for version %s",
@@ -254,53 +251,53 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
                         version,
                     )
                     return release
-            
+
             raise FirmwareVersionNotFoundError(
-                f"Version {version} not found in GitHub releases for this device type"
+                f"Version {version} not found in GitHub releases for this device type",
             )
-            
-        except asyncio.TimeoutError as err:
+
+        except TimeoutError as err:
             raise FirmwareDownloadError(
-                "Timeout fetching GitHub releases"
+                "Timeout fetching GitHub releases",
             ) from err
         except aiohttp.ClientError as err:
             raise FirmwareDownloadError(
-                f"Failed to fetch GitHub releases: {err}"
+                f"Failed to fetch GitHub releases: {err}",
             ) from err
 
-    async def _download_firmware(self, version: str) -> tuple[bytes, str]:
+    async def _download_firmware(self, version: str) -> tuple[bytes, str]:  # noqa: C901, PLR0912, PLR0915
         """Download firmware binary from GitHub release assets.
-        
+
         Args:
             version: Version to download (without 'v' prefix, normalized without suffixes)
-            
+
         Returns:
             Tuple of (firmware_data, filename)
-        
+
         """
         # Fetch specific release from GitHub if version differs from latest
         normalized_latest = self._normalize_version(
             self._github_coordinator.data.get("tag_name", "").lstrip("v")
-            if self._github_coordinator.data else None
+            if self._github_coordinator.data else None,
         )
-        
+
         # If requesting a different version than the cached latest, fetch it from GitHub
         if version != normalized_latest:
             release_data = await self._fetch_github_release(version)
         else:
             # Use cached coordinator data for latest version
             release_data = self._github_coordinator.data
-            
+
         if not release_data:
             raise FirmwareDownloadError(
-                f"Could not find GitHub release for version {version}"
+                f"Could not find GitHub release for version {version}",
             )
 
         # Find firmware asset in release
         assets = release_data.get("assets", [])
         if not assets:
             raise FirmwareVersionNotFoundError(
-                f"No assets found in release {version}"
+                f"No assets found in release {version}",
             )
 
         # Determine device type from hardware version
@@ -318,36 +315,33 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
             name = asset.get("name", "").lower()
             if not name.endswith(".bin"):
                 continue
-            
+
             # Match asset to device type
             has_pro = "pro" in name
             has_usb = "usb" in name and "pro" not in name
             has_obd = "obd" in name and "usb" not in name and "pro" not in name
-            
-            if is_pro and has_pro:
+
+            if (is_pro and has_pro) or (is_usb and has_usb):
                 firmware_asset = asset
                 break
-            elif is_usb and has_usb:
-                firmware_asset = asset
-                break
-            elif not is_pro and not is_usb and has_obd:
+            if not is_pro and not is_usb and has_obd:
                 firmware_asset = asset
                 break
 
         if not firmware_asset:
             device_type = "PRO" if is_pro else ("USB" if is_usb else "OBD")
             raise FirmwareVersionNotFoundError(
-                f"No {device_type} firmware found in release {version}"
+                f"No {device_type} firmware found in release {version}",
             )
 
         download_url = firmware_asset.get("browser_download_url")
         if not download_url:
             raise FirmwareDownloadError(
-                "No download URL found for firmware asset"
+                "No download URL found for firmware asset",
             )
 
         firmware_filename = firmware_asset.get("name", "firmware.bin")
-        
+
         _LOGGER.debug(
             "Downloading firmware from %s (asset: %s)",
             download_url,
@@ -356,11 +350,27 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
 
         session = async_get_clientsession(self.hass)
         try:
-            async with async_timeout.timeout(FIRMWARE_DOWNLOAD_TIMEOUT):
+            async with asyncio.timeout(FIRMWARE_DOWNLOAD_TIMEOUT):
                 response = await session.get(download_url)
                 response.raise_for_status()
                 firmware_data = await response.read()
-
+        except aiohttp.ClientResponseError as err:
+            if err.status == 404:
+                raise FirmwareVersionNotFoundError(
+                    f"Firmware asset not found at {download_url}",
+                ) from err
+            raise FirmwareDownloadError(
+                f"Failed to download firmware: HTTP {err.status}",
+            ) from err
+        except TimeoutError as err:
+            raise FirmwareDownloadError(
+                "Timeout downloading firmware from GitHub",
+            ) from err
+        except aiohttp.ClientError as err:
+            raise FirmwareDownloadError(
+                f"Network error downloading firmware: {err}",
+            ) from err
+        else:
             _LOGGER.info(
                 "Downloaded firmware %s (%d bytes)",
                 firmware_filename,
@@ -368,30 +378,13 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
             )
             return firmware_data, firmware_filename
 
-        except aiohttp.ClientResponseError as err:
-            if err.status == 404:
-                raise FirmwareVersionNotFoundError(
-                    f"Firmware asset not found at {download_url}"
-                ) from err
-            raise FirmwareDownloadError(
-                f"Failed to download firmware: HTTP {err.status}"
-            ) from err
-        except asyncio.TimeoutError as err:
-            raise FirmwareDownloadError(
-                "Timeout downloading firmware from GitHub"
-            ) from err
-        except aiohttp.ClientError as err:
-            raise FirmwareDownloadError(
-                f"Network error downloading firmware: {err}"
-            ) from err
-
     async def _upload_firmware_to_device(self, firmware_data: bytes, firmware_filename: str) -> None:
         """Upload firmware to device OTA endpoint.
-        
+
         Args:
             firmware_data: Binary firmware data
             firmware_filename: Original filename from GitHub release (e.g., wican-fw_obd_pro_v445p.bin)
-        
+
         """
         # Get device connection info
         device_host = (
@@ -421,12 +414,12 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
 
         # Get the session without timeout/connector limits that might interfere
         session = async_get_clientsession(self.hass, verify_ssl=False)
-        
+
         try:
             # Attempt 1: regular multipart upload (may use chunked transfer encoding).
             # Now that device firmware supports multipart+chunked, prefer this simpler path.
             try:
-                async with async_timeout.timeout(FIRMWARE_UPLOAD_TIMEOUT):
+                async with asyncio.timeout(FIRMWARE_UPLOAD_TIMEOUT):
                     form_data = aiohttp.FormData()
                     form_data.add_field(
                         OTA_FORM_FIELD,
@@ -445,7 +438,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
                     )
                     response.raise_for_status()
                     await response.text()
-            except (asyncio.TimeoutError, aiohttp.ClientError) as err:
+            except (TimeoutError, aiohttp.ClientError) as err:
                 # Attempt 2: fallback to fixed Content-Length multipart body.
                 # Useful for devices/firmwares that still struggle with chunked uploads.
                 _LOGGER.warning(
@@ -456,11 +449,11 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
                 boundary = f"----wican-ha-{secrets.token_hex(16)}"
                 header = (
                     f"--{boundary}\r\n"
-                    f"Content-Disposition: form-data; name=\"{OTA_FORM_FIELD}\"; filename=\"{firmware_filename}\"\r\n"
+                    f'Content-Disposition: form-data; name="{OTA_FORM_FIELD}"; filename="{firmware_filename}"\r\n'
                     "Content-Type: application/octet-stream\r\n"
                     "\r\n"
-                ).encode("utf-8")
-                footer = f"\r\n--{boundary}--\r\n".encode("utf-8")
+                ).encode()
+                footer = f"\r\n--{boundary}--\r\n".encode()
                 body = header + firmware_data + footer
 
                 _LOGGER.debug(
@@ -469,7 +462,7 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
                     boundary,
                 )
 
-                async with async_timeout.timeout(FIRMWARE_UPLOAD_TIMEOUT):
+                async with asyncio.timeout(FIRMWARE_UPLOAD_TIMEOUT):
                     response = await session.post(
                         url,
                         data=body,
@@ -485,13 +478,13 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
 
             _LOGGER.info("Firmware uploaded successfully to device")
 
-        except asyncio.TimeoutError as err:
+        except TimeoutError as err:
             raise FirmwareUploadError(
-                "Timeout uploading firmware to device"
+                "Timeout uploading firmware to device",
             ) from err
         except aiohttp.ClientError as err:
             raise FirmwareUploadError(
-                f"Failed to upload firmware to device: {err}"
+                f"Failed to upload firmware to device: {err}",
             ) from err
 
 

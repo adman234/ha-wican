@@ -1,16 +1,34 @@
 """Test specific version installation feature."""
-import pytest
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
-from homeassistant.core import HomeAssistant
+
 from homeassistant.components.update import (
     ATTR_VERSION,
     DOMAIN as UPDATE_DOMAIN,
     SERVICE_INSTALL,
 )
 from homeassistant.const import ATTR_ENTITY_ID
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.wican.const import DOMAIN
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
+
+@pytest.fixture(autouse=True)
+def mock_params_update():
+    """Mock async_update_params_from_github to prevent blocking I/O in tests."""
+    with patch(
+        "custom_components.wican.param_loader.async_update_params_from_github",
+        new_callable=AsyncMock,
+        return_value=False,
+    ):
+        yield
 
 
 @pytest.fixture
@@ -91,20 +109,19 @@ async def test_install_specific_version(
             return_value=True,
         ),
         patch(
-            "custom_components.wican.github_releases.async_get_clientsession"
+            "custom_components.wican.github_releases.async_get_clientsession",
         ) as mock_gh_session,
         patch(
-            "custom_components.wican.update.async_get_clientsession"
+            "custom_components.wican.update.async_get_clientsession",
         ) as mock_update_session,
     ):
         # Mock GitHub API response with latest release (4.45p)
         latest_release = mock_github_releases_list[0]
         mock_gh_response = AsyncMock()
-        mock_gh_response.json.return_value = [latest_release]
+        mock_gh_response.status = 200
+        mock_gh_response.json = AsyncMock(return_value=[latest_release])
         mock_gh_response.raise_for_status = MagicMock()
-        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_gh_response
-        )
+        mock_gh_session.return_value.get = AsyncMock(return_value=mock_gh_response)
 
         # Setup integration
         assert await hass.config_entries.async_setup(config_entry.entry_id)
@@ -122,25 +139,20 @@ async def test_install_specific_version(
 
         # Mock GitHub API call for fetching specific version
         mock_specific_version_response = AsyncMock()
-        mock_specific_version_response.json.return_value = mock_github_releases_list
+        mock_specific_version_response.status = 200
+        mock_specific_version_response.json = AsyncMock(return_value=mock_github_releases_list)
         mock_specific_version_response.raise_for_status = MagicMock()
 
         # Setup mock to return different responses
         async def get_side_effect(url, **kwargs):
-            if "releases" in url:
+            if "api.github.com" in url and "releases" in url:
                 # Return list of all releases for specific version lookup
-                response = AsyncMock()
-                response.json.return_value = mock_github_releases_list
-                response.raise_for_status = MagicMock()
-                return response.__aenter__.return_value
-            else:
-                # Return firmware download
-                return mock_download_response
+                return mock_specific_version_response
+            # Return firmware download
+            return mock_download_response
 
-        mock_update_session.return_value.get.side_effect = get_side_effect
-        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
-            mock_upload_response
-        )
+        mock_update_session.return_value.get = AsyncMock(side_effect=get_side_effect)
+        mock_update_session.return_value.post = AsyncMock(return_value=mock_upload_response)
 
         # Install specific version 4.44 (older than latest 4.45)
         await hass.services.async_call(
@@ -155,11 +167,12 @@ async def test_install_specific_version(
 
         # Verify GitHub API was called to fetch releases list
         get_calls = mock_update_session.return_value.get.call_args_list
-        assert any("releases" in str(call) for call in get_calls), \
+        assert any("api.github.com" in str(call) for call in get_calls), (
             "Should have fetched releases from GitHub API"
+        )
 
         # Verify correct firmware was downloaded (v4.44p asset)
-        download_calls = [call for call in get_calls if "releases" not in str(call)]
+        download_calls = [call for call in get_calls if "api.github.com" not in str(call)]
         assert len(download_calls) > 0, "Should have downloaded firmware"
         download_url = str(download_calls[0][0][0])
         assert "v444p" in download_url or "4.44" in download_url, \
@@ -195,20 +208,19 @@ async def test_install_latest_version_uses_cache(
             return_value=True,
         ),
         patch(
-            "custom_components.wican.github_releases.async_get_clientsession"
+            "custom_components.wican.github_releases.async_get_clientsession",
         ) as mock_gh_session,
         patch(
-            "custom_components.wican.update.async_get_clientsession"
+            "custom_components.wican.update.async_get_clientsession",
         ) as mock_update_session,
     ):
         # Mock GitHub API response with latest release (4.45p)
         latest_release = mock_github_releases_list[0]
         mock_gh_response = AsyncMock()
-        mock_gh_response.json.return_value = [latest_release]
+        mock_gh_response.status = 200
+        mock_gh_response.json = AsyncMock(return_value=[latest_release])
         mock_gh_response.raise_for_status = MagicMock()
-        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_gh_response
-        )
+        mock_gh_session.return_value.get = AsyncMock(return_value=mock_gh_response)
 
         # Setup integration
         assert await hass.config_entries.async_setup(config_entry.entry_id)
@@ -224,12 +236,8 @@ async def test_install_latest_version_uses_cache(
         mock_upload_response = AsyncMock()
         mock_upload_response.raise_for_status = MagicMock()
 
-        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_download_response
-        )
-        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
-            mock_upload_response
-        )
+        mock_update_session.return_value.get = AsyncMock(return_value=mock_download_response)
+        mock_update_session.return_value.post = AsyncMock(return_value=mock_upload_response)
 
         # Install latest version (no version specified)
         await hass.services.async_call(
@@ -245,10 +253,11 @@ async def test_install_latest_version_uses_cache(
         # Verify GitHub API was NOT called for releases list
         # (should use cached coordinator data)
         get_calls = mock_update_session.return_value.get.call_args_list
-        releases_calls = [call for call in get_calls if "releases" in str(call)]
-        assert len(releases_calls) == 0, \
+        api_calls = [call for call in get_calls if "api.github.com" in str(call)]
+        assert len(api_calls) == 0, (
             "Should NOT fetch releases from GitHub API when installing latest (use cache)"
+        )
 
         # Verify firmware was downloaded
-        download_calls = [call for call in get_calls if "releases" not in str(call)]
+        download_calls = [call for call in get_calls if "api.github.com" not in str(call)]
         assert len(download_calls) > 0, "Should have downloaded firmware"

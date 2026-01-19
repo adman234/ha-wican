@@ -2,28 +2,31 @@
 
 from __future__ import annotations
 
-from typing import Any
-from ipaddress import IPv4Address, IPv6Address
-
-from homeassistant.helpers import config_entry_flow
-from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
-from homeassistant.const import CONF_WEBHOOK_ID, CONF_HOST
-from homeassistant.core import callback
-from homeassistant import config_entries
 import logging
-import voluptuous as vol
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from homeassistant import config_entries
+from homeassistant.components import onboarding, webhook
+from homeassistant.const import CONF_HOST, CONF_WEBHOOK_ID
+from homeassistant.core import callback
+from homeassistant.helpers.network import get_url
+import voluptuous as vol
 from yarl import URL
 
 from .const import (
-    DOMAIN,
     CONF_POST_INTERVAL,
     DEFAULT_POST_INTERVAL,
-    MIN_POST_INTERVAL,
+    DOMAIN,
     MAX_POST_INTERVAL,
+    MIN_POST_INTERVAL,
 )
+
+if TYPE_CHECKING:
+    from ipaddress import IPv4Address, IPv6Address
+
+    from homeassistant.data_entry_flow import FlowResult
+    from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,7 +62,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             {
                 vol.Required("mdns"): str,
                 vol.Optional(CONF_HOST): str,
-            }
+            },
         )
         return self.async_show_form(step_id="user", data_schema=data_schema)
 
@@ -85,7 +88,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Extract MAC address and device_id from TXT records (from firmware)
         mac_address = properties.get("mac", b"").decode("utf-8") if isinstance(properties.get("mac"), bytes) else properties.get("mac", "")
         device_id = properties.get("device_id", b"").decode("utf-8") if isinstance(properties.get("device_id"), bytes) else properties.get("device_id", "")
-        
+
         # Use MAC address as unique_id (most stable), fallback to device_id, then hostname
         if mac_address:
             # Normalize MAC address format (remove colons for unique_id)
@@ -99,7 +102,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             base_id = hostname if hostname else name
             unique_id = f"{base_id}-{host}:{port}"
             _LOGGER.debug("Using hostname-based unique_id: %s", unique_id)
-        
+
         await self.async_set_unique_id(unique_id)
         self._abort_if_unique_id_configured()
 
@@ -121,16 +124,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return await self.async_step_zeroconf_confirm()
 
     async def async_step_zeroconf_confirm(
-        self, user_input: dict[str, Any] | None = None
+        self, user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
         """Handle user confirmation of discovered WiCAN device."""
-        from homeassistant.components import onboarding
-        from homeassistant.helpers.network import get_url
-
         # Auto-add during onboarding for seamless setup
         if user_input is not None or not onboarding.async_is_onboarded(self.hass):
             webhook_id = uuid4().hex
-            
+
             # Generate webhook URL for display
             try:
                 base_url = get_url(self.hass)
@@ -138,11 +138,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 if webhook_path.startswith("http"):
                     webhook_url = webhook_path
                 else:
-                    from yarl import URL
                     webhook_url = str(URL(base_url) / webhook_path.lstrip("/"))
             except Exception:
                 webhook_url = f"<webhook_id: {webhook_id}>"
-            
+
             return self.async_create_entry(
                 title=self.discovered_name or "WiCAN",
                 data={
@@ -188,10 +187,7 @@ class WiCANOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        if self.hass is not None:
-            options = dict(self.config_entry.options)
-        else:
-            options = self._initial_options
+        options = dict(self.config_entry.options) if self.hass is not None else self._initial_options
         data_schema = vol.Schema(
             {
                 vol.Required(
@@ -200,8 +196,8 @@ class WiCANOptionsFlow(config_entries.OptionsFlow):
                 ): vol.All(
                     vol.Coerce(int),
                     vol.Range(min=MIN_POST_INTERVAL, max=MAX_POST_INTERVAL),
-                )
-            }
+                ),
+            },
         )
         return self.async_show_form(step_id="init", data_schema=data_schema)
 
@@ -224,7 +220,7 @@ def _format_http_url(address: str | None, port: int | None) -> str | None:
                 scheme="http",
                 host=address.strip("[]"),
                 port=port,
-            )
+            ),
         )
     except ValueError:
         return None

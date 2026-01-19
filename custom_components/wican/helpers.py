@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Coroutine
 from functools import wraps
 import logging
-from typing import Any, Concatenate, TypeVar
+from typing import TYPE_CHECKING, Any, Concatenate, TypeVar
 
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN
 from .exceptions import WiCANConnectionError, WiCANError
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine
+
+    from .entity import WiCANEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,7 +22,7 @@ _WiCANEntityT = TypeVar("_WiCANEntityT", bound="WiCANEntity")
 _P = TypeVar("_P")
 
 
-def wican_exception_handler(
+def wican_exception_handler[WiCANEntityT: "WiCANEntity"](
     func: Callable[Concatenate[_WiCANEntityT, ...], Coroutine[Any, Any, Any]],
 ) -> Callable[Concatenate[_WiCANEntityT, ...], Coroutine[Any, Any, None]]:
     """Decorate WiCAN calls to handle exceptions consistently.
@@ -46,7 +50,7 @@ def wican_exception_handler(
             if hasattr(self, "coordinator"):
                 self.coordinator.last_update_success = False
                 self.coordinator.async_update_listeners()
-            _LOGGER.error("Connection error in %s: %s", func.__name__, error)
+            _LOGGER.exception("Connection error in %s", func.__name__)
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="connection_error",
@@ -54,13 +58,13 @@ def wican_exception_handler(
             ) from error
         except WiCANError as error:
             # Generic WiCAN errors
-            _LOGGER.error("WiCAN error in %s: %s", func.__name__, error)
+            _LOGGER.exception("WiCAN error in %s", func.__name__)
             raise HomeAssistantError(
                 translation_domain=DOMAIN,
                 translation_key="wican_error",
                 translation_placeholders={"error": str(error)},
             ) from error
-        except Exception as error:
+        except Exception:
             # Unexpected errors - log and re-raise
             _LOGGER.exception("Unexpected error in %s", func.__name__)
             raise

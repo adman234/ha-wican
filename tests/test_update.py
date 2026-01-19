@@ -2,27 +2,35 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
-import pytest
 
-from aiohttp import ClientResponseError, ClientError
+from aiohttp import ClientError, ClientResponseError
 from homeassistant.components.update import (
+    ATTR_VERSION,
     DOMAIN as UPDATE_DOMAIN,
     SERVICE_INSTALL,
-    ATTR_VERSION,
 )
-from homeassistant.const import ATTR_ENTITY_ID, STATE_ON, STATE_OFF
-from homeassistant.core import HomeAssistant
+from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.exceptions import HomeAssistantError
-
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.wican.const import DOMAIN
-from custom_components.wican.exceptions import (
-    FirmwareDownloadError,
-    FirmwareUploadError,
-    FirmwareVersionNotFoundError,
-)
+
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
+
+@pytest.fixture(autouse=True)
+def mock_params_update():
+    """Mock async_update_params_from_github to prevent blocking I/O in tests."""
+    with patch(
+        "custom_components.wican.param_loader.async_update_params_from_github",
+        new_callable=AsyncMock,
+        return_value=False,
+    ):
+        yield
 
 
 @pytest.fixture
@@ -112,7 +120,7 @@ def mock_config_entry_usb() -> MockConfigEntry:
         data={
             "mdns": "http://wican_usb.local:80",
             "webhook_id": "test_webhook_id_usb",
-            "fw_version": "4.13u",
+            "fw_version": "4.12u",
             "hw_version": "WiCAN-USB",
             "device_id": "test_device_usb",
             "host": "wican_usb.local",
@@ -137,13 +145,14 @@ async def test_update_entity_setup(
             return_value=True,
         ),
         patch(
-            "custom_components.wican.github_releases.async_get_clientsession"
+            "custom_components.wican.github_releases.async_get_clientsession",
         ) as mock_session,
     ):
         # Mock GitHub API response
         mock_response = AsyncMock()
+        mock_response.get.return_value.__aenter__.return_value.status = 200
         mock_response.get.return_value.__aenter__.return_value.json.return_value = [
-            mock_github_release
+            mock_github_release,
         ]
         mock_response.get.return_value.__aenter__.return_value.raise_for_status = (
             MagicMock()
@@ -175,11 +184,12 @@ async def test_installed_version_from_coordinator(
             return_value=True,
         ),
         patch(
-            "custom_components.wican.github_releases.async_get_clientsession"
+            "custom_components.wican.github_releases.async_get_clientsession",
         ) as mock_session,
     ):
         # Mock GitHub API
         mock_response = AsyncMock()
+        mock_response.status = 200
         mock_response.json.return_value = [mock_github_release]
         mock_response.raise_for_status = MagicMock()
         mock_session.return_value.get.return_value.__aenter__.return_value = (
@@ -196,8 +206,8 @@ async def test_installed_version_from_coordinator(
                 "status": {
                     "fw_version": "4.50",
                     "device_id": "test_device_123",
-                }
-            }
+                },
+            },
         )
         await hass.async_block_till_done()
 
@@ -221,16 +231,15 @@ async def test_latest_version_from_github(
             return_value=True,
         ),
         patch(
-            "custom_components.wican.github_releases.async_get_clientsession"
+            "custom_components.wican.github_releases.async_get_clientsession",
         ) as mock_session,
     ):
-        # Mock GitHub API
+        # Mock GitHub API - use correct pattern for 'await session.get()' not 'async with'
         mock_response = AsyncMock()
-        mock_response.json.return_value = [mock_github_release]
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=[mock_github_release])
         mock_response.raise_for_status = MagicMock()
-        mock_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_response
-        )
+        mock_session.return_value.get = AsyncMock(return_value=mock_response)
 
         assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
@@ -238,7 +247,7 @@ async def test_latest_version_from_github(
         # Check latest version from GitHub
         state = hass.states.get("update.wican_device_firmware")
         assert state is not None
-        assert state.attributes.get("latest_version") == "4.45"
+        assert state.attributes.get("latest_version") == "4.13"
 
 
 async def test_firmware_filename_standard(
@@ -255,19 +264,18 @@ async def test_firmware_filename_standard(
             return_value=True,
         ),
         patch(
-            "custom_components.wican.github_releases.async_get_clientsession"
+            "custom_components.wican.github_releases.async_get_clientsession",
         ) as mock_gh_session,
         patch(
-            "custom_components.wican.update.async_get_clientsession"
+            "custom_components.wican.update.async_get_clientsession",
         ) as mock_update_session,
     ):
         # Mock GitHub API
         mock_gh_response = AsyncMock()
-        mock_gh_response.json.return_value = [mock_github_release]
+        mock_gh_response.status = 200
+        mock_gh_response.json = AsyncMock(return_value=[mock_github_release])
         mock_gh_response.raise_for_status = MagicMock()
-        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_gh_response
-        )
+        mock_gh_session.return_value.get = AsyncMock(return_value=mock_gh_response)
 
         # Mock firmware download
         mock_firmware_data = b"fake_firmware_data"
@@ -279,12 +287,8 @@ async def test_firmware_filename_standard(
         mock_upload_response = AsyncMock()
         mock_upload_response.raise_for_status = MagicMock()
 
-        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_download_response
-        )
-        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
-            mock_upload_response
-        )
+        mock_update_session.return_value.get = AsyncMock(return_value=mock_download_response)
+        mock_update_session.return_value.post = AsyncMock(return_value=mock_upload_response)
 
         assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
@@ -321,19 +325,18 @@ async def test_firmware_filename_pro(
             return_value=True,
         ),
         patch(
-            "custom_components.wican.github_releases.async_get_clientsession"
+            "custom_components.wican.github_releases.async_get_clientsession",
         ) as mock_gh_session,
         patch(
-            "custom_components.wican.update.async_get_clientsession"
+            "custom_components.wican.update.async_get_clientsession",
         ) as mock_update_session,
     ):
         # Mock GitHub API with PRO release
         mock_gh_response = AsyncMock()
-        mock_gh_response.json.return_value = [mock_github_release_pro]
+        mock_gh_response.status = 200
+        mock_gh_response.json = AsyncMock(return_value=[mock_github_release_pro])
         mock_gh_response.raise_for_status = MagicMock()
-        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_gh_response
-        )
+        mock_gh_session.return_value.get = AsyncMock(return_value=mock_gh_response)
 
         # Mock firmware download
         mock_firmware_data = b"fake_firmware_data_pro"
@@ -345,12 +348,8 @@ async def test_firmware_filename_pro(
         mock_upload_response = AsyncMock()
         mock_upload_response.raise_for_status = MagicMock()
 
-        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_download_response
-        )
-        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
-            mock_upload_response
-        )
+        mock_update_session.return_value.get = AsyncMock(return_value=mock_download_response)
+        mock_update_session.return_value.post = AsyncMock(return_value=mock_upload_response)
 
         assert await hass.config_entries.async_setup(mock_config_entry_pro.entry_id)
         await hass.async_block_till_done()
@@ -386,19 +385,18 @@ async def test_firmware_filename_usb(
             return_value=True,
         ),
         patch(
-            "custom_components.wican.github_releases.async_get_clientsession"
+            "custom_components.wican.github_releases.async_get_clientsession",
         ) as mock_gh_session,
         patch(
-            "custom_components.wican.update.async_get_clientsession"
+            "custom_components.wican.update.async_get_clientsession",
         ) as mock_update_session,
     ):
         # Mock GitHub API with standard release (has both OBD and USB assets)
         mock_gh_response = AsyncMock()
-        mock_gh_response.json.return_value = [mock_github_release]
+        mock_gh_response.status = 200
+        mock_gh_response.json = AsyncMock(return_value=[mock_github_release])
         mock_gh_response.raise_for_status = MagicMock()
-        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_gh_response
-        )
+        mock_gh_session.return_value.get = AsyncMock(return_value=mock_gh_response)
 
         # Mock firmware download
         mock_firmware_data = b"fake_firmware_data_usb"
@@ -410,12 +408,8 @@ async def test_firmware_filename_usb(
         mock_upload_response = AsyncMock()
         mock_upload_response.raise_for_status = MagicMock()
 
-        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_download_response
-        )
-        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
-            mock_upload_response
-        )
+        mock_update_session.return_value.get = AsyncMock(return_value=mock_download_response)
+        mock_update_session.return_value.post = AsyncMock(return_value=mock_upload_response)
 
         assert await hass.config_entries.async_setup(mock_config_entry_usb.entry_id)
         await hass.async_block_till_done()
@@ -451,29 +445,26 @@ async def test_firmware_download_404_error(
             return_value=True,
         ),
         patch(
-            "custom_components.wican.github_releases.async_get_clientsession"
+            "custom_components.wican.github_releases.async_get_clientsession",
         ) as mock_gh_session,
         patch(
-            "custom_components.wican.update.async_get_clientsession"
+            "custom_components.wican.update.async_get_clientsession",
         ) as mock_update_session,
     ):
         # Mock GitHub API
         mock_gh_response = AsyncMock()
-        mock_gh_response.json.return_value = [mock_github_release]
+        mock_gh_response.status = 200
+        mock_gh_response.json = AsyncMock(return_value=[mock_github_release])
         mock_gh_response.raise_for_status = MagicMock()
-        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_gh_response
-        )
+        mock_gh_session.return_value.get = AsyncMock(return_value=mock_gh_response)
 
         # Mock firmware download with 404 error
         mock_download_response = AsyncMock()
-        mock_download_response.raise_for_status.side_effect = ClientResponseError(
-            request_info=MagicMock(), history=(), status=404
-        )
+        mock_download_response.raise_for_status = MagicMock(side_effect=ClientResponseError(
+            request_info=MagicMock(), history=(), status=404,
+        ))
 
-        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_download_response
-        )
+        mock_update_session.return_value.get = AsyncMock(return_value=mock_download_response)
 
         assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
@@ -502,19 +493,18 @@ async def test_firmware_upload_connection_error(
             return_value=True,
         ),
         patch(
-            "custom_components.wican.github_releases.async_get_clientsession"
+            "custom_components.wican.github_releases.async_get_clientsession",
         ) as mock_gh_session,
         patch(
-            "custom_components.wican.update.async_get_clientsession"
+            "custom_components.wican.update.async_get_clientsession",
         ) as mock_update_session,
     ):
         # Mock GitHub API
         mock_gh_response = AsyncMock()
-        mock_gh_response.json.return_value = [mock_github_release]
+        mock_gh_response.status = 200
+        mock_gh_response.json = AsyncMock(return_value=[mock_github_release])
         mock_gh_response.raise_for_status = MagicMock()
-        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_gh_response
-        )
+        mock_gh_session.return_value.get = AsyncMock(return_value=mock_gh_response)
 
         # Mock firmware download success
         mock_firmware_data = b"fake_firmware_data"
@@ -524,14 +514,12 @@ async def test_firmware_upload_connection_error(
 
         # Mock firmware upload failure
         mock_upload_response = AsyncMock()
-        mock_upload_response.raise_for_status.side_effect = ClientError("Connection failed")
+        mock_upload_response.raise_for_status = MagicMock(
+            side_effect=ClientError("Connection failed"),
+        )
 
-        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_download_response
-        )
-        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
-            mock_upload_response
-        )
+        mock_update_session.return_value.get = AsyncMock(return_value=mock_download_response)
+        mock_update_session.return_value.post = AsyncMock(return_value=mock_upload_response)
 
         assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
@@ -560,36 +548,57 @@ async def test_firmware_update_with_specific_version(
             return_value=True,
         ),
         patch(
-            "custom_components.wican.github_releases.async_get_clientsession"
+            "custom_components.wican.github_releases.async_get_clientsession",
         ) as mock_gh_session,
         patch(
-            "custom_components.wican.update.async_get_clientsession"
+            "custom_components.wican.update.async_get_clientsession",
         ) as mock_update_session,
     ):
         # Mock GitHub API
         mock_gh_response = AsyncMock()
-        mock_gh_response.json.return_value = [mock_github_release]
+        mock_gh_response.status = 200
+        mock_gh_response.json = AsyncMock(return_value=[mock_github_release])
         mock_gh_response.raise_for_status = MagicMock()
-        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_gh_response
-        )
+        mock_gh_session.return_value.get = AsyncMock(return_value=mock_gh_response)
+
+        # Provide an additional release for v4.40 for SPECIFIC_VERSION path
+        mock_github_release_v440 = {
+            "tag_name": "v4.40",
+            "name": "WiCAN v4.40",
+            "html_url": "https://github.com/meatpiHQ/wican-fw/releases/tag/v4.40",
+            "body": "Supported Devices: WiCAN-OBD and WiCAN-USB",
+            "prerelease": False,
+            "assets": [
+                {
+                    "name": "wican-fw_obd_v440.bin",
+                    "browser_download_url": "https://github.com/meatpiHQ/wican-fw/releases/download/v4.40/wican-fw_obd_v440.bin",
+                    "size": 1600000,
+                },
+            ],
+        }
 
         # Mock firmware download
         mock_firmware_data = b"fake_firmware_v4.40"
         mock_download_response = AsyncMock()
-        mock_download_response.read.return_value = mock_firmware_data
+        mock_download_response.read = AsyncMock(return_value=mock_firmware_data)
         mock_download_response.raise_for_status = MagicMock()
 
         # Mock firmware upload
         mock_upload_response = AsyncMock()
         mock_upload_response.raise_for_status = MagicMock()
 
-        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_download_response
+        # First GET is GitHub releases API (for version lookup), second GET is firmware binary
+        mock_api_response = AsyncMock()
+        mock_api_response.status = 200
+        mock_api_response.raise_for_status = MagicMock()
+        mock_api_response.json = AsyncMock(
+            return_value=[mock_github_release, mock_github_release_v440],
         )
-        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
-            mock_upload_response
+
+        mock_update_session.return_value.get = AsyncMock(
+            side_effect=[mock_api_response, mock_download_response],
         )
+        mock_update_session.return_value.post = AsyncMock(return_value=mock_upload_response)
 
         assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()
@@ -607,9 +616,9 @@ async def test_firmware_update_with_specific_version(
 
         # Verify correct version was requested
         download_calls = mock_update_session.return_value.get.call_args_list
-        assert len(download_calls) > 0
-        download_url = str(download_calls[0][0][0])
-        assert "wican_v4.40.bin" in download_url
+        assert len(download_calls) >= 2
+        download_url = str(download_calls[1][0][0])
+        assert "wican-fw_obd_v440.bin" in download_url
 
 
 async def test_update_entity_unavailable_without_version(
@@ -639,11 +648,12 @@ async def test_update_entity_unavailable_without_version(
             return_value=True,
         ),
         patch(
-            "custom_components.wican.github_releases.async_get_clientsession"
+            "custom_components.wican.github_releases.async_get_clientsession",
         ) as mock_session,
     ):
         # Mock GitHub API
         mock_response = AsyncMock()
+        mock_response.status = 200
         mock_response.json.return_value = [mock_github_release]
         mock_response.raise_for_status = MagicMock()
         mock_session.return_value.get.return_value.__aenter__.return_value = (
@@ -673,20 +683,19 @@ async def test_progress_reporting_during_update(
             return_value=True,
         ),
         patch(
-            "custom_components.wican.github_releases.async_get_clientsession"
+            "custom_components.wican.github_releases.async_get_clientsession",
         ) as mock_gh_session,
         patch(
-            "custom_components.wican.update.async_get_clientsession"
+            "custom_components.wican.update.async_get_clientsession",
         ) as mock_update_session,
         patch("asyncio.sleep", return_value=None),  # Speed up test
     ):
         # Mock GitHub API
         mock_gh_response = AsyncMock()
-        mock_gh_response.json.return_value = [mock_github_release]
+        mock_gh_response.status = 200
+        mock_gh_response.json = AsyncMock(return_value=[mock_github_release])
         mock_gh_response.raise_for_status = MagicMock()
-        mock_gh_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_gh_response
-        )
+        mock_gh_session.return_value.get = AsyncMock(return_value=mock_gh_response)
 
         # Mock firmware download
         mock_firmware_data = b"fake_firmware_data"
@@ -698,12 +707,8 @@ async def test_progress_reporting_during_update(
         mock_upload_response = AsyncMock()
         mock_upload_response.raise_for_status = MagicMock()
 
-        mock_update_session.return_value.get.return_value.__aenter__.return_value = (
-            mock_download_response
-        )
-        mock_update_session.return_value.post.return_value.__aenter__.return_value = (
-            mock_upload_response
-        )
+        mock_update_session.return_value.get = AsyncMock(return_value=mock_download_response)
+        mock_update_session.return_value.post = AsyncMock(return_value=mock_upload_response)
 
         assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
         await hass.async_block_till_done()

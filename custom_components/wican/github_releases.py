@@ -5,12 +5,9 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
-import async_timeout
-
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -22,6 +19,9 @@ from .const import (
     GITHUB_REPO,
 )
 
+if TYPE_CHECKING:
+    from homeassistant.core import HomeAssistant
+
 _LOGGER = logging.getLogger(__name__)
 
 UPDATE_INTERVAL = timedelta(seconds=GITHUB_RELEASES_UPDATE_INTERVAL)
@@ -32,11 +32,11 @@ class GitHubReleasesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def __init__(self, hass: HomeAssistant, is_pro: bool = False) -> None:
         """Initialize the coordinator.
-        
+
         Args:
             hass: Home Assistant instance.
             is_pro: Whether this is for a WiCAN-PRO device.
-        
+
         """
         super().__init__(
             hass,
@@ -56,7 +56,7 @@ class GitHubReleasesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         session = async_get_clientsession(self.hass)
 
         try:
-            async with async_timeout.timeout(GITHUB_API_TIMEOUT):
+            async with asyncio.timeout(GITHUB_API_TIMEOUT):
                 response = await session.get(
                     url,
                     headers={"Accept": "application/vnd.github.v3+json"},
@@ -99,11 +99,11 @@ class GitHubReleasesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "PRO" if self._is_pro else "standard",
                 latest.get("tag_name"),
             )
-            return latest
-
-        except asyncio.TimeoutError as err:
+        except TimeoutError as err:
             raise UpdateFailed("Timeout fetching GitHub releases") from err
         except aiohttp.ClientError as err:
             raise UpdateFailed(f"Error fetching GitHub releases: {err}") from err
         except (ValueError, KeyError) as err:
             raise UpdateFailed(f"Invalid response from GitHub: {err}") from err
+        else:
+            return latest
