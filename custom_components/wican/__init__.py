@@ -17,7 +17,6 @@ from homeassistant.const import CONF_WEBHOOK_ID, EVENT_HOMEASSISTANT_STARTED, Pl
 from homeassistant.exceptions import ConfigEntryError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.network import get_url
 import voluptuous as vol
 from yarl import URL
 
@@ -33,6 +32,7 @@ from .const import (
 from .coordinator import WiCANDataUpdateCoordinator
 from .exceptions import WiCANWebhookError
 from .github_releases import GitHubReleasesCoordinator
+from .helpers import resolve_webhook_url
 from .models import WiCANRuntimeData
 from .param_loader import async_update_params_from_github
 
@@ -378,9 +378,11 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
             entry.runtime_data.device_host = derived_host
 
     try:
-        base_url: str = get_url(hass)
-        webhook_path = webhook.async_generate_url(hass, entry.runtime_data.webhook_id)
-        webhook_url = webhook_path if webhook_path.startswith("http") else str(URL(base_url) / webhook_path.lstrip("/"))
+        webhook_url = resolve_webhook_url(
+            hass,
+            entry.runtime_data.webhook_id,
+            fallback_url=entry.data.get("webhook_url"),
+        )
     except Exception as err:
         _LOGGER.warning("Cannot generate webhook URL for %s: %s", entry.entry_id, err)
         return False

@@ -6,7 +6,10 @@ from functools import wraps
 import logging
 from typing import TYPE_CHECKING, Any, Concatenate, TypeVar
 
+from homeassistant.components import webhook
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.network import NoURLAvailableError, get_url
+from yarl import URL
 
 from .const import DOMAIN
 from .exceptions import WiCANConnectionError, WiCANError
@@ -14,12 +17,59 @@ from .exceptions import WiCANConnectionError, WiCANError
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
+    from homeassistant.core import HomeAssistant
+
     from .entity import WiCANEntity
 
 _LOGGER = logging.getLogger(__name__)
 
 _WiCANEntityT = TypeVar("_WiCANEntityT", bound="WiCANEntity")
 _P = TypeVar("_P")
+
+
+def build_webhook_url(base_url: str, webhook_id: str) -> str:
+    """Build an absolute webhook URL from a base URL and webhook id."""
+    return str(URL(base_url) / webhook.async_generate_path(webhook_id).lstrip("/"))
+
+
+def resolve_webhook_url(
+    hass: HomeAssistant,
+    webhook_id: str,
+    *,
+    fallback_url: str | None = None,
+    require_current_request: bool = False,
+) -> str:
+    """Resolve the best available absolute webhook URL.
+
+    Prefer Home Assistant's normal URL resolution with IPs allowed and internal
+    addresses favored, then optionally fall back to the active request host.
+    Finally, reuse a previously stored webhook URL if one exists.
+    """
+    try:
+        return webhook.async_generate_url(
+            hass,
+            webhook_id,
+            allow_ip=True,
+            prefer_external=False,
+        )
+    except NoURLAvailableError as original_error:
+        if require_current_request:
+            try:
+                current_request_base = get_url(
+                    hass,
+                    require_current_request=True,
+                    allow_cloud=False,
+                    allow_ip=True,
+                    prefer_external=False,
+                )
+                return build_webhook_url(current_request_base, webhook_id)
+            except NoURLAvailableError:
+                pass
+
+        if fallback_url:
+            return fallback_url
+
+        raise original_error
 
 
 def wican_exception_handler[WiCANEntityT: "WiCANEntity"](

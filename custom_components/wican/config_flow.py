@@ -7,10 +7,9 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from homeassistant import config_entries
-from homeassistant.components import onboarding, webhook
+from homeassistant.components import onboarding
 from homeassistant.const import CONF_HOST, CONF_WEBHOOK_ID
 from homeassistant.core import callback
-from homeassistant.helpers.network import get_url
 import voluptuous as vol
 from yarl import URL
 
@@ -21,6 +20,7 @@ from .const import (
     MAX_POST_INTERVAL,
     MIN_POST_INTERVAL,
 )
+from .helpers import resolve_webhook_url
 
 if TYPE_CHECKING:
     from ipaddress import IPv4Address, IPv6Address
@@ -51,12 +51,28 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             host = user_input.get(CONF_HOST)
             title = host or mdns or "WiCAN"
             webhook_id = uuid4().hex
-            entry_data = {CONF_WEBHOOK_ID: webhook_id}
+            webhook_url = resolve_webhook_url(
+                self.hass,
+                webhook_id,
+                require_current_request=True,
+            )
+            entry_data = {
+                CONF_WEBHOOK_ID: webhook_id,
+                "webhook_url": webhook_url,
+            }
             if mdns:
                 entry_data["mdns"] = _format_http_url(mdns, None) or mdns
             if host:
                 entry_data["host"] = _format_http_url(host, None) or host
-            return self.async_create_entry(title=title, data=entry_data)
+
+            return self.async_create_entry(
+                title=title,
+                data=entry_data,
+                description_placeholders={
+                    "webhook_url": webhook_url,
+                    "docs_url": "https://github.com/meatpiHQ/wican-fw",
+                },
+            )
 
         data_schema = vol.Schema(
             {
@@ -130,17 +146,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Auto-add during onboarding for seamless setup
         if user_input is not None or not onboarding.async_is_onboarded(self.hass):
             webhook_id = uuid4().hex
-
-            # Generate webhook URL for display
-            try:
-                base_url = get_url(self.hass)
-                webhook_path = webhook.async_generate_url(self.hass, webhook_id)
-                if webhook_path.startswith("http"):
-                    webhook_url = webhook_path
-                else:
-                    webhook_url = str(URL(base_url) / webhook_path.lstrip("/"))
-            except Exception:
-                webhook_url = f"<webhook_id: {webhook_id}>"
+            webhook_url = resolve_webhook_url(
+                self.hass,
+                webhook_id,
+                require_current_request=True,
+            )
 
             return self.async_create_entry(
                 title=self.discovered_name or "WiCAN",
@@ -150,6 +160,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "mdns": self.discovered_mdns,
                         CONF_HOST: self.discovered_host,
                         CONF_WEBHOOK_ID: webhook_id,
+                        "webhook_url": webhook_url,
                         "mac": self.discovered_mac,
                         "device_id": self.discovered_device_id,
                     }.items()

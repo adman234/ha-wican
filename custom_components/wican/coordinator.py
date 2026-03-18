@@ -147,15 +147,21 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if raw_value is None:
             return None
 
-        # Battery voltage: strip "V" suffix and convert to float
-        if key == "batt_voltage" and isinstance(raw_value, str) and raw_value.endswith("V"):
-            try:
-                return float(raw_value[:-1])
-            except ValueError:
-                _LOGGER.warning(
-                    "Failed to parse battery voltage: %s", raw_value,
-                )
-                return raw_value
+        # Battery voltage: strip "V" / " V" suffix (any case) and convert to float
+        # Handles firmware variants: "12.5V", "12.5 V", "12.5v", " 12.5 V "
+        if key == "batt_voltage" and isinstance(raw_value, str):
+            _LOGGER.debug("Raw batt_voltage from device: %r", raw_value)
+            stripped = raw_value.strip()
+            if stripped.upper().endswith("V"):
+                numeric_part = stripped[:-1].strip()
+                try:
+                    return float(numeric_part)
+                except ValueError:
+                    _LOGGER.warning(
+                        "Failed to parse battery voltage: %r (numeric part: %r)",
+                        raw_value, numeric_part,
+                    )
+                    return raw_value
 
         # Generic numeric string conversion
         if isinstance(raw_value, str):
