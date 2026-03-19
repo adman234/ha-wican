@@ -377,6 +377,28 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
             host = derived_host
             entry.runtime_data.device_host = derived_host
 
+    # Lightweight migration/backfill for older entries: if webhook_url was not
+    # persisted when this entry was created, try to compute and store it now so
+    # that future calls can rely on the fallback.
+    if "webhook_url" not in entry.data:
+        try:
+            resolved_url = resolve_webhook_url(
+                hass,
+                entry.runtime_data.webhook_id,
+            )
+        except Exception:
+            resolved_url = None
+        else:
+            if resolved_url:
+                # Update the config entry data with the resolved webhook_url.
+                await hass.config_entries.async_update_entry(
+                    entry,
+                    data={**entry.data, "webhook_url": resolved_url},
+                )
+                _LOGGER.debug(
+                    "Backfilled webhook_url for entry %s", entry.entry_id
+                )
+
     try:
         webhook_url = resolve_webhook_url(
             hass,
