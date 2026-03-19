@@ -33,6 +33,7 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
         icon="mdi:car-battery",
         device_class=SensorDeviceClass.VOLTAGE,
         native_unit_of_measurement="V",
+        suggested_display_precision=1,
         extra_attributes=[
             "batt_alert",
             "batt_alert_volt",

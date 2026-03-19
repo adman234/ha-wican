@@ -169,6 +169,18 @@ async def test_sensor_voltage_normalization(
         assert batt_voltage_state.state == expected_state
 
 
+async def test_batt_voltage_sets_decimal_display_precision(
+    hass: HomeAssistant,
+    init_integration: MockConfigEntry,
+) -> None:
+    """Test battery voltage sensor requests decimal display precision."""
+    entity_registry = er.async_get(hass)
+
+    batt_voltage = entity_registry.async_get("sensor.wican_device_batt_voltage")
+    assert batt_voltage is not None
+    assert batt_voltage.options.get("sensor", {}).get("suggested_display_precision") == 1
+
+
 async def test_sensor_state_restoration(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,

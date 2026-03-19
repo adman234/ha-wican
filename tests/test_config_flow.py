@@ -9,6 +9,7 @@ import pytest
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from homeassistant.const import CONF_NAME, CONF_WEBHOOK_ID
 
 from custom_components.wican.const import DOMAIN
@@ -38,6 +39,8 @@ async def test_user_flow_success(
     assert result2["title"] == "http://wican_test.local:80"
     assert result2["data"]["mdns"] == "http://wican_test.local:80"
     assert CONF_WEBHOOK_ID in result2["data"]
+    assert result2["data"]["webhook_url"].endswith(result2["data"][CONF_WEBHOOK_ID])
+    assert result2["description_placeholders"]["webhook_url"] == result2["data"]["webhook_url"]
 
 
 async def test_user_flow_cannot_connect(
@@ -58,6 +61,7 @@ async def test_user_flow_cannot_connect(
     )
 
     assert result2["type"] == FlowResultType.CREATE_ENTRY
+    assert result2["description_placeholders"]["webhook_url"] == result2["data"]["webhook_url"]
 
 
 async def test_user_flow_adds_http_scheme(
@@ -84,8 +88,6 @@ async def test_zeroconf_flow_success(
     mock_aiohttp_session,
 ) -> None:
     """Test zeroconf discovery flow with confirmation and MAC address."""
-    from homeassistant.components.zeroconf import ZeroconfServiceInfo
-
     discovery_info = ZeroconfServiceInfo(
         ip_address="192.168.1.100",
         ip_addresses=["192.168.1.100"],
@@ -136,8 +138,6 @@ async def test_zeroconf_flow_not_wican(
     hass: HomeAssistant,
 ) -> None:
     """Test zeroconf discovery ignores non-WiCAN devices."""
-    from homeassistant.components.zeroconf import ZeroconfServiceInfo
-
     discovery_info = ZeroconfServiceInfo(
         ip_address="192.168.1.200",
         ip_addresses=["192.168.1.200"],
@@ -162,8 +162,6 @@ async def test_zeroconf_already_configured(
     hass: HomeAssistant,
 ) -> None:
     """Test zeroconf aborts if device already configured (MAC-based unique_id)."""
-    from homeassistant.components.zeroconf import ZeroconfServiceInfo
-
     # Create a config entry with MAC-based unique_id
     existing_entry = MockConfigEntry(
         domain=DOMAIN,
@@ -204,8 +202,6 @@ async def test_zeroconf_during_onboarding(
     mock_aiohttp_session,
 ) -> None:
     """Test zeroconf auto-creates entry during onboarding."""
-    from homeassistant.components.zeroconf import ZeroconfServiceInfo
-
     discovery_info = ZeroconfServiceInfo(
         ip_address="192.168.1.100",
         ip_addresses=["192.168.1.100"],
@@ -239,6 +235,7 @@ async def test_zeroconf_during_onboarding(
     # Zeroconf creates entry directly (no confirmation step)
     assert result["type"] == FlowResultType.CREATE_ENTRY
     assert result["title"] == "wican_test.local."
+    assert result["description_placeholders"]["webhook_url"] == result["data"]["webhook_url"]
 
 
 async def test_options_flow(
@@ -262,8 +259,6 @@ async def test_zeroconf_flow_user_declines(
     mock_aiohttp_session,
 ) -> None:
     """Test user can decline discovered device."""
-    from homeassistant.components.zeroconf import ZeroconfServiceInfo
-
     discovery_info = ZeroconfServiceInfo(
         ip_address="192.168.1.100",
         ip_addresses=["192.168.1.100"],
@@ -298,8 +293,6 @@ async def test_zeroconf_flow_legacy_firmware(
     mock_aiohttp_session,
 ) -> None:
     """Test zeroconf works with older firmware without MAC address."""
-    from homeassistant.components.zeroconf import ZeroconfServiceInfo
-
     discovery_info = ZeroconfServiceInfo(
         ip_address="192.168.1.100",
         ip_addresses=["192.168.1.100"],
@@ -335,6 +328,7 @@ async def test_zeroconf_flow_legacy_firmware(
         # Should create entry with fallback unique_id (hostname-based)
         assert result2["type"] == FlowResultType.CREATE_ENTRY
         assert result2["title"] == "wican_legacy.local."
+        assert result2["description_placeholders"]["webhook_url"] == result2["data"]["webhook_url"]
         # No MAC address in data for legacy firmware
         assert "mac" not in result2["data"] or not result2["data"].get("mac")
 
@@ -369,8 +363,6 @@ async def test_config_flow_zeroconf_discovery_with_mac_and_device_id(
     hass: HomeAssistant,
 ) -> None:
     """Test config flow via zeroconf discovery with MAC and device_id."""
-    from homeassistant.components.zeroconf import ZeroconfServiceInfo
-    
     # Use proper WiCAN service name pattern
     discovery_info = ZeroconfServiceInfo(
         ip_address="192.168.1.100",
@@ -396,8 +388,6 @@ async def test_zeroconf_device_id_fallback_unique_id(
     hass: HomeAssistant,
 ) -> None:
     """Test zeroconf flow using device_id when MAC is not available (line 102)."""
-    from homeassistant.components.zeroconf import ZeroconfServiceInfo
-
     discovery_info = ZeroconfServiceInfo(
         ip_address="192.168.1.100",
         ip_addresses=["192.168.1.100"],
@@ -427,8 +417,6 @@ async def test_zeroconf_hostname_fallback_unique_id(
     hass: HomeAssistant,
 ) -> None:
     """Test zeroconf flow using hostname when MAC and device_id are unavailable (line 103)."""
-    from homeassistant.components.zeroconf import ZeroconfServiceInfo
-
     discovery_info = ZeroconfServiceInfo(
         ip_address="192.168.1.100",
         ip_addresses=["192.168.1.100"],
@@ -454,7 +442,6 @@ async def test_zeroconf_confirm_webhook_url_exception(
     mock_aiohttp_session,
 ) -> None:
     """Test zeroconf confirmation handles webhook URL generation exception (lines 145-149)."""
-    from homeassistant.components.zeroconf import ZeroconfServiceInfo
     from unittest.mock import patch
 
     discovery_info = ZeroconfServiceInfo(
@@ -475,8 +462,11 @@ async def test_zeroconf_confirm_webhook_url_exception(
         data=discovery_info,
     )
 
-    # Now confirm with mocked get_url that raises exception
-    with patch("homeassistant.helpers.network.get_url", side_effect=Exception("URL error")):
+    # Now confirm with mocked URL resolution that falls back to the current request
+    with patch(
+        "custom_components.wican.config_flow.resolve_webhook_url",
+        return_value="http://192.168.1.10:8123/api/webhook/test_webhook_id",
+    ):
         result2 = await hass.config_entries.flow.async_configure(
             result["flow_id"],
             {},
@@ -485,8 +475,7 @@ async def test_zeroconf_confirm_webhook_url_exception(
     assert result2["type"] == FlowResultType.CREATE_ENTRY
     # Title should be the hostname (discovered_name)
     assert result2["title"] == "wican_test.local."
-    # Webhook URL should fall back to <webhook_id: ...> format due to exception
-    assert "webhook_id" in result2["data"]
+    assert result2["data"]["webhook_url"] == result2["description_placeholders"]["webhook_url"]
 
 
 async def test_options_flow_when_config_entry_set(

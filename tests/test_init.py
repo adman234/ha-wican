@@ -9,7 +9,9 @@ import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.const import CONF_WEBHOOK_ID
+from homeassistant.helpers.network import NoURLAvailableError
 
+from custom_components.wican import _async_register_webhook_on_device
 from custom_components.wican.const import DOMAIN
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -169,6 +171,53 @@ async def test_webhook_no_duplicate_registration(
     
     # Integration is working - no errors means no spurious re-registrations
     assert entry.state == ConfigEntryState.LOADED
+
+
+async def test_webhook_registration_no_url_available(
+    hass: HomeAssistant,
+    mock_aiohttp_session,
+) -> None:
+    """Test webhook registration falls back to stored webhook_url."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="WiCAN Device",
+        data={
+            "mdns": "http://wican_test.local:80",
+            "host": "http://wican_test.local:80",
+            CONF_WEBHOOK_ID: "test_webhook_id",
+            "webhook_url": "http://192.168.1.10:8123/api/webhook/test_webhook_id",
+        },
+        unique_id="wican_test-192.168.1.100:80",
+    )
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.wican._async_register_webhook_on_device",
+        return_value=True,
+    ):
+        assert await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    entry = config_entry
+    session = AsyncMock()
+    response = AsyncMock()
+    response.status = 200
+    session.post.return_value = response
+
+    with (
+        patch(
+            "custom_components.wican.webhook.async_generate_url",
+            side_effect=NoURLAvailableError,
+        ),
+        patch(
+            "custom_components.wican.async_get_clientsession",
+            return_value=session,
+        ),
+    ):
+        assert await _async_register_webhook_on_device(hass, entry) is True
+
+    session.post.assert_awaited()
+    assert session.post.await_args.kwargs["json"]["url"] == entry.data["webhook_url"]
 
 
 

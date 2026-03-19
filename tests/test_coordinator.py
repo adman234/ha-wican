@@ -123,14 +123,25 @@ async def test_coordinator_normalize_sensor_value_voltage(
     """Test sensor value normalization for voltage."""
     coordinator = WiCANDataUpdateCoordinator(hass, mock_config_entry)
 
-    # Battery voltage with "V" suffix
+    # Standard format (no space before unit)
     assert coordinator.normalize_sensor_value("batt_voltage", "12.5V") == 12.5
     assert coordinator.normalize_sensor_value("batt_voltage", "11.3V") == 11.3
 
-    # Invalid voltage format
+    # Format with space before unit — reported firmware variant: "12 V"
+    assert coordinator.normalize_sensor_value("batt_voltage", "12.5 V") == 12.5
+    assert coordinator.normalize_sensor_value("batt_voltage", "12 V") == 12.0
+
+    # Lowercase unit suffix
+    assert coordinator.normalize_sensor_value("batt_voltage", "12.5v") == 12.5
+    assert coordinator.normalize_sensor_value("batt_voltage", "12.5 v") == 12.5
+
+    # Leading/trailing whitespace in the whole string
+    assert coordinator.normalize_sensor_value("batt_voltage", " 12.5V ") == 12.5
+
+    # Invalid voltage format — should return raw string
     assert coordinator.normalize_sensor_value("batt_voltage", "invalid") == "invalid"
 
-    # Non-voltage key
+    # Non-voltage key — should not strip "V"
     assert coordinator.normalize_sensor_value("other_key", "12.5V") == "12.5V"
 
 
