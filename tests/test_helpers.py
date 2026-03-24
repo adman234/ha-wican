@@ -8,9 +8,10 @@ import pytest
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.network import NoURLAvailableError
 
 from custom_components.wican.exceptions import WiCANConnectionError, WiCANError
-from custom_components.wican.helpers import wican_exception_handler
+from custom_components.wican.helpers import resolve_device_webhook_urls, wican_exception_handler
 
 
 class MockEntity:
@@ -152,3 +153,64 @@ async def test_decorator_with_function_arguments():
     # Should not interfere with function arguments
     # (function returns None due to decorator, but shouldn't crash)
     assert entity.coordinator.async_update_listeners.called
+
+
+def test_resolve_device_webhook_urls_prefers_local_http_and_external_https(
+    hass: HomeAssistant,
+) -> None:
+    """Test devices prefer local HTTP and append external HTTPS when available."""
+    with (
+        patch(
+            "custom_components.wican.helpers.resolve_local_webhook_url",
+            return_value="http://homeassistant.local:8123/api/webhook/test",
+        ),
+        patch(
+            "custom_components.wican.helpers.resolve_external_https_webhook_url",
+            return_value="https://example.ui.nabu.casa/api/webhook/test",
+        ),
+    ):
+        urls = resolve_device_webhook_urls(
+            hass,
+            "test",
+            allow_external_https_fallback=True,
+        )
+
+    assert urls == [
+        "http://homeassistant.local:8123/api/webhook/test",
+        "https://example.ui.nabu.casa/api/webhook/test",
+    ]
+
+
+def test_resolve_device_webhook_urls_falls_back_to_external_https(
+    hass: HomeAssistant,
+) -> None:
+    """Test Pro devices can fall back to external HTTPS when local HTTP is unavailable."""
+    with (
+        patch(
+            "custom_components.wican.helpers.resolve_local_webhook_url",
+            side_effect=NoURLAvailableError,
+        ),
+        patch(
+            "custom_components.wican.helpers.resolve_external_https_webhook_url",
+            return_value="https://example.ui.nabu.casa/api/webhook/test",
+        ),
+    ):
+        urls = resolve_device_webhook_urls(
+            hass,
+            "test",
+            allow_external_https_fallback=True,
+        )
+
+    assert urls == ["https://example.ui.nabu.casa/api/webhook/test"]
+
+
+def test_resolve_device_webhook_urls_requires_local_http_without_fallback(
+    hass: HomeAssistant,
+) -> None:
+    """Test non-Pro devices still require a local HTTP webhook URL."""
+    with patch(
+        "custom_components.wican.helpers.resolve_local_webhook_url",
+        side_effect=NoURLAvailableError,
+    ):
+        with pytest.raises(NoURLAvailableError):
+            resolve_device_webhook_urls(hass, "test")

@@ -71,6 +71,94 @@ async def test_webhook_registration_success_first_try(
     assert payload["enabled"] is True
 
 
+async def test_webhook_registration_pro_includes_external_https_url(
+    hass: HomeAssistant,
+    mock_session,
+) -> None:
+    """Test Pro devices send local HTTP and external HTTPS webhook URLs."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="WiCAN Pro",
+        data={
+            CONF_WEBHOOK_ID: "test_webhook_id",
+            "fw_version": "4.49",
+            "hw_version": "WiCAN-PRO",
+            "host": "http://wican-pro.local",
+            "mdns": "http://wican-pro.local",
+            "ip": "192.168.1.150",
+        },
+        options={CONF_POST_INTERVAL: 15},
+    )
+    entry.add_to_hass(hass)
+
+    mock_session.post.return_value = create_mock_response(200, "OK")
+
+    with (
+        patch(
+            "custom_components.wican.async_get_clientsession",
+            return_value=mock_session,
+        ),
+        patch(
+            "custom_components.wican.resolve_device_webhook_urls",
+            return_value=[
+                "http://homeassistant.local:8123/api/webhook/test_webhook_id",
+                "https://example.ui.nabu.casa/api/webhook/test_webhook_id",
+            ],
+        ),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    payload = mock_session.post.call_args.kwargs["json"]
+    assert payload["url"] == "http://homeassistant.local:8123/api/webhook/test_webhook_id"
+    assert payload["urls"] == [
+        "http://homeassistant.local:8123/api/webhook/test_webhook_id",
+        "https://example.ui.nabu.casa/api/webhook/test_webhook_id",
+    ]
+
+
+async def test_webhook_registration_pro_falls_back_to_external_https_only(
+    hass: HomeAssistant,
+    mock_session,
+) -> None:
+    """Test Pro devices can register with external HTTPS only when local HTTP is unavailable."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="WiCAN Pro",
+        data={
+            CONF_WEBHOOK_ID: "test_webhook_id",
+            "fw_version": "4.49",
+            "hw_version": "WiCAN-PRO",
+            "host": "http://wican-pro.local",
+            "mdns": "http://wican-pro.local",
+            "ip": "192.168.1.150",
+        },
+        options={CONF_POST_INTERVAL: 15},
+    )
+    entry.add_to_hass(hass)
+
+    mock_session.post.return_value = create_mock_response(200, "OK")
+
+    with (
+        patch(
+            "custom_components.wican.async_get_clientsession",
+            return_value=mock_session,
+        ),
+        patch(
+            "custom_components.wican.resolve_device_webhook_urls",
+            return_value=[
+                "https://example.ui.nabu.casa/api/webhook/test_webhook_id",
+            ],
+        ),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    payload = mock_session.post.call_args.kwargs["json"]
+    assert payload["url"] == "https://example.ui.nabu.casa/api/webhook/test_webhook_id"
+    assert "urls" not in payload
+
+
 async def test_webhook_registration_retry_on_connection_error(
     hass: HomeAssistant,
     mock_config_entry: MockConfigEntry,
@@ -378,7 +466,7 @@ async def test_webhook_registration_invalid_url_generation(
             return_value=mock_session,
         ),
         patch(
-            "custom_components.wican.get_url",
+            "custom_components.wican.resolve_device_webhook_urls",
             side_effect=Exception("Invalid URL"),
         ),
     ):

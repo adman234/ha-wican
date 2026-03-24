@@ -37,6 +37,12 @@ It is very much in an Alpha stage at the moment, and under constant changes, hop
 - Enter the mDNS/hostname (wican_xxxxxxxxxxxx.local) or IP-Address of WiCAN device to connect the WiCAN device. If you have multiple WiCAN devices repeat these steps for the other devices.
 - After setup, use the WiCAN integration's *Configure* button to adjust the **Post Interval** (in seconds) that controls how often the device pushes data to Home Assistant. The default is 15 seconds.
 
+### Webhook URL behavior
+- WiCAN devices use a single local HTTP webhook URL.
+- WiCAN-PRO devices on firmware `v4.49+` can receive multiple webhook URLs.
+- When available, Home Assistant sends WiCAN-PRO devices a local HTTP webhook URL first and an external HTTPS webhook URL second, such as Nabu Casa or a reverse proxy.
+- If no local HTTP Home Assistant URL is available, WiCAN-PRO `v4.49+` can fall back to a single external HTTPS webhook URL.
+
 Result: After completing installation and configuration, WiCAN will be connected to Home Assistant, and you will be able to monitor the available car parameters directly from the Home Assistant interface.
 
 # Troubleshooting

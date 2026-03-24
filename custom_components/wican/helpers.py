@@ -106,6 +106,70 @@ def resolve_external_webhook_url(hass: HomeAssistant, webhook_id: str) -> str:
     )
 
 
+def resolve_external_https_webhook_url(hass: HomeAssistant, webhook_id: str) -> str:
+    """Resolve the preferred external HTTPS webhook URL for remote access."""
+    external_base = get_url(
+        hass,
+        allow_ip=False,
+        prefer_external=True,
+    )
+    return _ensure_allowed_webhook_scheme(
+        build_webhook_url(external_base, webhook_id),
+        allowed_schemes={"https"},
+    )
+
+
+def resolve_device_webhook_urls(
+    hass: HomeAssistant,
+    webhook_id: str,
+    *,
+    fallback_url: str | None = None,
+    require_current_request: bool = False,
+    allow_external_https_fallback: bool = False,
+) -> list[str]:
+    """Resolve ordered webhook URLs to send to a device.
+
+    Non-Pro devices require a local HTTP webhook URL. Pro devices can also use
+    an external HTTPS URL, and may fall back to it when no local HTTP URL is
+    available.
+    """
+    local_url: str | None = None
+    local_error: NoURLAvailableError | None = None
+
+    try:
+        local_url = resolve_local_webhook_url(
+            hass,
+            webhook_id,
+            fallback_url=fallback_url,
+            require_current_request=require_current_request,
+        )
+    except NoURLAvailableError as err:
+        local_error = err
+        if not allow_external_https_fallback:
+            raise
+
+    external_url: str | None = None
+    if allow_external_https_fallback:
+        try:
+            external_url = resolve_external_https_webhook_url(hass, webhook_id)
+        except NoURLAvailableError:
+            external_url = None
+
+    urls: list[str] = []
+    if local_url:
+        urls.append(local_url)
+    if external_url and external_url != local_url:
+        urls.append(external_url)
+
+    if urls:
+        return urls
+
+    if local_error is not None:
+        raise local_error
+
+    raise NoURLAvailableError
+
+
 def resolve_webhook_url(
     hass: HomeAssistant,
     webhook_id: str,
