@@ -454,7 +454,7 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
         else:
             if resolved_url:
                 # Update the config entry data with the resolved webhook_url.
-                await hass.config_entries.async_update_entry(
+                hass.config_entries.async_update_entry(
                     entry,
                     data={**entry.data, "webhook_url": resolved_url},
                 )
