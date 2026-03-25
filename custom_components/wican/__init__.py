@@ -34,7 +34,7 @@ from .const import (
 from .coordinator import WiCANDataUpdateCoordinator
 from .exceptions import WiCANWebhookError
 from .github_releases import GitHubReleasesCoordinator
-from .helpers import resolve_device_webhook_urls, resolve_webhook_url
+from .helpers import resolve_device_webhook_urls
 from .models import WiCANRuntimeData
 from .param_loader import async_update_params_from_github
 
@@ -440,38 +440,6 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
             host = derived_host
             entry.runtime_data.device_host = derived_host
 
-    # Lightweight migration/backfill for older entries: if webhook_url was not
-    # persisted when this entry was created, try to compute and store it now so
-    # that future calls can rely on the fallback.
-    if "webhook_url" not in entry.data:
-        try:
-            resolved_url = resolve_webhook_url(
-                hass,
-                entry.runtime_data.webhook_id,
-            )
-        except Exception:
-            resolved_url = None
-        else:
-            if resolved_url:
-                # Update the config entry data with the resolved webhook_url.
-                hass.config_entries.async_update_entry(
-                    entry,
-                    data={**entry.data, "webhook_url": resolved_url},
-                )
-                _LOGGER.debug(
-                    "Backfilled webhook_url for entry %s", entry.entry_id
-                )
-
-    try:
-        webhook_url = resolve_webhook_url(
-            hass,
-            entry.runtime_data.webhook_id,
-            fallback_url=entry.data.get("webhook_url"),
-        )
-    except Exception as err:
-        _LOGGER.warning("Cannot generate webhook URL for %s: %s", entry.entry_id, err)
-        return False
-
     # Get post interval from runtime_data
     post_interval = entry.runtime_data.post_interval
 
@@ -494,6 +462,14 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
         payload["url"],
         post_interval,
     )
+
+    # Backfill webhook_url for older entries after successfully building payload.
+    if "webhook_url" not in entry.data:
+        hass.config_entries.async_update_entry(
+            entry,
+            data={**entry.data, "webhook_url": payload["url"]},
+        )
+        _LOGGER.debug("Backfilled webhook_url for entry %s", entry.entry_id)
 
     # Use HA's shared session (reuses connections)
     session = async_get_clientsession(hass)
