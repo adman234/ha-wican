@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from http import HTTPStatus
 import logging
+import re
 import time
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -25,6 +26,7 @@ from .const import (
     DEFAULT_POST_INTERVAL,
     DOMAIN,
     IP_CACHE_DURATION,
+    PRO_DUAL_WEBHOOK_MIN_FW_VERSION,
     WEBHOOK_MAX_RETRIES,
     WEBHOOK_REGISTRATION_TIMEOUT,
     WEBHOOK_RETRY_DELAY_BASE,
@@ -32,7 +34,7 @@ from .const import (
 from .coordinator import WiCANDataUpdateCoordinator
 from .exceptions import WiCANWebhookError
 from .github_releases import GitHubReleasesCoordinator
-from .helpers import resolve_webhook_url
+from .helpers import resolve_device_webhook_urls, resolve_webhook_url
 from .models import WiCANRuntimeData
 from .param_loader import async_update_params_from_github
 
@@ -54,6 +56,67 @@ WiCANConfigEntry = ConfigEntry[WiCANRuntimeData]
 
 class _WebhookEndpointsFailedError(WiCANWebhookError):
     """Raised when all webhook endpoints failed for this attempt."""
+
+
+def _parse_version(version: str | None) -> tuple[int, ...] | None:
+    """Parse a version string like v4.49 into a comparable tuple."""
+    if not version:
+        return None
+
+    parts = re.findall(r"\d+", version)
+    if not parts:
+        return None
+
+    return tuple(int(part) for part in parts)
+
+
+def _is_version_at_least(version: str | None, minimum: tuple[int, ...]) -> bool:
+    """Return True when version is greater than or equal to minimum."""
+    parsed_version = _parse_version(version)
+    if parsed_version is None:
+        return False
+
+    max_len = max(len(parsed_version), len(minimum))
+    padded_version = parsed_version + (0,) * (max_len - len(parsed_version))
+    padded_minimum = minimum + (0,) * (max_len - len(minimum))
+    return padded_version >= padded_minimum
+
+
+def _supports_dual_webhook_urls(entry: WiCANConfigEntry) -> bool:
+    """Return True when the device firmware can accept multiple webhook URLs."""
+    hw_version = str(entry.data.get("hw_version", "")).lower()
+    if "pro" not in hw_version:
+        return False
+
+    return _is_version_at_least(
+        entry.data.get("fw_version"),
+        PRO_DUAL_WEBHOOK_MIN_FW_VERSION,
+    )
+
+
+def _build_webhook_payload(
+    hass: HomeAssistant,
+    entry: WiCANConfigEntry,
+    post_interval: int,
+) -> dict[str, str | bool | int | list[str]]:
+    """Build the webhook registration payload for the device firmware."""
+    urls = resolve_device_webhook_urls(
+        hass,
+        entry.runtime_data.webhook_id,
+        fallback_url=entry.data.get("webhook_url"),
+        allow_external_https_fallback=_supports_dual_webhook_urls(entry),
+    )
+
+    payload: dict[str, str | bool | int | list[str]] = {
+        "url": urls[0],
+        "enabled": True,
+        "interval": post_interval,
+    }
+
+    if _supports_dual_webhook_urls(entry) and len(urls) > 1:
+        payload["urls"] = urls
+
+    return payload
 
 
 def _ensure_http_scheme(value: str | None) -> str | None:
@@ -391,7 +454,7 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
         else:
             if resolved_url:
                 # Update the config entry data with the resolved webhook_url.
-                await hass.config_entries.async_update_entry(
+                hass.config_entries.async_update_entry(
                     entry,
                     data={**entry.data, "webhook_url": resolved_url},
                 )
@@ -412,13 +475,28 @@ async def _async_register_webhook_on_device(  # noqa: C901, PLR0912, PLR0915
     # Get post interval from runtime_data
     post_interval = entry.runtime_data.post_interval
 
+    try:
+        payload = _build_webhook_payload(
+            hass,
+            entry,
+            post_interval,
+        )
+    except Exception as err:
+        _LOGGER.warning(
+            "Cannot generate webhook URL payload for %s: %s",
+            entry.entry_id,
+            err,
+        )
+        return False
+
     _LOGGER.info(
-        "Registering WiCAN webhook %s with interval %ss", webhook_url, post_interval,
+        "Registering WiCAN webhook %s with interval %ss",
+        payload["url"],
+        post_interval,
     )
 
     # Use HA's shared session (reuses connections)
     session = async_get_clientsession(hass)
-    payload = {"url": webhook_url, "enabled": True, "interval": post_interval}
 
     # Build endpoint candidates: prefer direct host/IP over mDNS
     # Use cached resolved IP if available and fresh (< 5 minutes old)

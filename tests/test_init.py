@@ -206,8 +206,218 @@ async def test_webhook_registration_no_url_available(
 
     with (
         patch(
-            "custom_components.wican.webhook.async_generate_url",
+            "custom_components.wican.helpers.get_url",
             side_effect=NoURLAvailableError,
+        ),
+        patch(
+            "custom_components.wican.async_get_clientsession",
+            return_value=session,
+        ),
+    ):
+        assert await _async_register_webhook_on_device(hass, entry) is True
+
+    session.post.assert_awaited()
+    assert session.post.await_args.kwargs["json"]["url"] == entry.data["webhook_url"]
+
+
+async def test_webhook_registration_non_pro_uses_single_local_http_url(
+    hass: HomeAssistant,
+    mock_aiohttp_session,
+) -> None:
+    """Test non-PRO firmware registers a single local HTTP webhook URL."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="WiCAN Device",
+        data={
+            "mdns": "http://wican_test.local:80",
+            "host": "http://wican_test.local:80",
+            "fw_version": "v4.99",
+            "hw_version": "v3.1",
+            CONF_WEBHOOK_ID: "test_webhook_id",
+        },
+        unique_id="wican_test-192.168.1.100:80",
+    )
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.wican._async_register_webhook_on_device",
+        return_value=True,
+    ):
+        assert await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    entry = config_entry
+    session = AsyncMock()
+    response = AsyncMock()
+    response.status = 200
+    session.post.return_value = response
+
+    with (
+        patch(
+            "custom_components.wican.helpers.get_url",
+            return_value="http://192.168.1.10:8123",
+        ),
+        patch(
+            "custom_components.wican.async_get_clientsession",
+            return_value=session,
+        ),
+    ):
+        assert await _async_register_webhook_on_device(hass, entry) is True
+
+    session.post.assert_awaited()
+    assert session.post.await_args.kwargs["json"] == {
+        "url": "http://192.168.1.10:8123/api/webhook/test_webhook_id",
+        "enabled": True,
+        "interval": entry.runtime_data.post_interval,
+    }
+
+
+async def test_webhook_registration_pro_uses_local_and_external_urls(
+    hass: HomeAssistant,
+    mock_aiohttp_session,
+) -> None:
+    """Test PRO firmware 4.49+ receives both local and external webhook URLs."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="WiCAN PRO",
+        data={
+            "mdns": "http://wican_pro.local:80",
+            "host": "http://wican_pro.local:80",
+            "fw_version": "v4.49",
+            "hw_version": "WiCAN PRO",
+            CONF_WEBHOOK_ID: "test_webhook_id",
+        },
+        unique_id="wican_pro-192.168.1.101:80",
+    )
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.wican._async_register_webhook_on_device",
+        return_value=True,
+    ):
+        assert await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    entry = config_entry
+    session = AsyncMock()
+    response = AsyncMock()
+    response.status = 200
+    session.post.return_value = response
+
+    with (
+        patch(
+            "custom_components.wican.helpers.get_url",
+            side_effect=[
+                "http://192.168.1.10:8123",
+                "https://example.ui.nabu.casa",
+            ],
+        ),
+        patch(
+            "custom_components.wican.async_get_clientsession",
+            return_value=session,
+        ),
+    ):
+        assert await _async_register_webhook_on_device(hass, entry) is True
+
+    session.post.assert_awaited()
+    assert session.post.await_args.kwargs["json"] == {
+        "url": "http://192.168.1.10:8123/api/webhook/test_webhook_id",
+        "urls": [
+            "http://192.168.1.10:8123/api/webhook/test_webhook_id",
+            "https://example.ui.nabu.casa/api/webhook/test_webhook_id",
+        ],
+        "enabled": True,
+        "interval": entry.runtime_data.post_interval,
+    }
+
+
+async def test_webhook_registration_pro_pre_449_uses_single_local_url(
+    hass: HomeAssistant,
+    mock_aiohttp_session,
+) -> None:
+    """Test older PRO firmware keeps the single local webhook URL payload."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="WiCAN PRO",
+        data={
+            "mdns": "http://wican_pro.local:80",
+            "host": "http://wican_pro.local:80",
+            "fw_version": "v4.48",
+            "hw_version": "WiCAN PRO",
+            CONF_WEBHOOK_ID: "test_webhook_id",
+        },
+        unique_id="wican_pro-192.168.1.102:80",
+    )
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.wican._async_register_webhook_on_device",
+        return_value=True,
+    ):
+        assert await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    entry = config_entry
+    session = AsyncMock()
+    response = AsyncMock()
+    response.status = 200
+    session.post.return_value = response
+
+    with (
+        patch(
+            "custom_components.wican.helpers.get_url",
+            return_value="http://192.168.1.10:8123",
+        ),
+        patch(
+            "custom_components.wican.async_get_clientsession",
+            return_value=session,
+        ),
+    ):
+        assert await _async_register_webhook_on_device(hass, entry) is True
+
+    session.post.assert_awaited()
+    assert session.post.await_args.kwargs["json"] == {
+        "url": "http://192.168.1.10:8123/api/webhook/test_webhook_id",
+        "enabled": True,
+        "interval": entry.runtime_data.post_interval,
+    }
+
+
+async def test_webhook_registration_https_local_falls_back_to_http_stored_url(
+    hass: HomeAssistant,
+    mock_aiohttp_session,
+) -> None:
+    """Test HTTPS local URLs are rejected for device registration."""
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="WiCAN Device",
+        data={
+            "mdns": "http://wican_test.local:80",
+            "host": "http://wican_test.local:80",
+            CONF_WEBHOOK_ID: "test_webhook_id",
+            "webhook_url": "http://192.168.1.10:8123/api/webhook/test_webhook_id",
+        },
+        unique_id="wican_test-192.168.1.103:80",
+    )
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.wican._async_register_webhook_on_device",
+        return_value=True,
+    ):
+        assert await hass.config_entries.async_setup(config_entry.entry_id)
+        await hass.async_block_till_done()
+
+    entry = config_entry
+    session = AsyncMock()
+    response = AsyncMock()
+    response.status = 200
+    session.post.return_value = response
+
+    with (
+        patch(
+            "custom_components.wican.helpers.get_url",
+            return_value="https://internal.example.com",
         ),
         patch(
             "custom_components.wican.async_get_clientsession",
