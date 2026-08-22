@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -372,3 +373,96 @@ async def test_coordinator_numeric_string_conversion_edge_cases(
 
 
 
+
+
+def _coordinator_for(hass: HomeAssistant, data: dict) -> WiCANDataUpdateCoordinator:
+    """Build a coordinator against a MockConfigEntry with the given data."""
+    entry = MockConfigEntry(domain=DOMAIN, data=data)
+    entry.add_to_hass(hass)
+    entry.runtime_data = SimpleNamespace(cached_resolved_ip=None, device_host=None)
+    return WiCANDataUpdateCoordinator(hass, entry)
+
+
+async def test_status_urls_order_and_dedup(hass: HomeAssistant) -> None:
+    """Cached IP is tried first, mDNS last, and duplicates collapse."""
+    coordinator = _coordinator_for(
+        hass, {"host": "http://192.168.1.100", "mdns": "http://wican_test.local"},
+    )
+    coordinator.config_entry.runtime_data.cached_resolved_ip = "192.168.1.100"
+
+    assert coordinator._status_urls() == [
+        "http://192.168.1.100/check_status",
+        "http://wican_test.local/check_status",
+    ]
+
+
+async def test_status_urls_adds_missing_scheme(hass: HomeAssistant) -> None:
+    """A bare host gains an http:// scheme."""
+    coordinator = _coordinator_for(hass, {"host": "192.168.1.100"})
+    assert coordinator._status_urls() == ["http://192.168.1.100/check_status"]
+
+
+async def test_status_poll_strips_credentials(hass: HomeAssistant) -> None:
+    """/check_status returns the WiFi PSK and MQTT credentials; none may be kept.
+
+    The endpoint is unauthenticated and calls config_server_get_status_json(false),
+    so the payload carries secrets the webhook path strips. Only allowlisted keys
+    may reach coordinator data.
+    """
+    coordinator = _coordinator_for(hass, {"host": "http://192.168.1.100"})
+
+    payload = {
+        "batt_voltage": "13.9V",
+        "battery_temp_min_c": 31,
+        "battery_temp_max_c": 31,
+        "sta_ssid": "my-network",
+        "sta_pass": "hunter2",
+        "mqtt_user": "user",
+        "mqtt_pass": "secret",
+        "batt_alert_pass": "secret",
+        "batt_mqtt_pass": "secret",
+        "batt_alert_url": "mqtt://example",
+    }
+
+    with patch.object(
+        WiCANDataUpdateCoordinator, "_async_fetch_status", return_value=payload,
+    ):
+        data = await coordinator._async_update_data()
+
+    status = data["status"]
+    assert status["batt_voltage"] == "13.9V"
+    assert status["battery_temp_min_c"] == 31
+    for secret in (
+        "sta_ssid", "sta_pass", "mqtt_user", "mqtt_pass",
+        "batt_alert_pass", "batt_mqtt_pass", "batt_alert_url",
+    ):
+        assert secret not in status
+
+
+async def test_status_poll_failure_keeps_last_values(hass: HomeAssistant) -> None:
+    """A sleeping device must not blank out every entity."""
+    coordinator = _coordinator_for(hass, {"host": "http://192.168.1.100"})
+    coordinator._data["status"] = {"batt_voltage": "12.1V"}
+
+    with patch.object(
+        WiCANDataUpdateCoordinator, "_async_fetch_status", return_value=None,
+    ):
+        data = await coordinator._async_update_data()
+
+    assert data["status"]["batt_voltage"] == "12.1V"
+
+
+async def test_status_poll_preserves_webhook_data(hass: HomeAssistant) -> None:
+    """Polling device status must not clobber webhook-pushed vehicle data."""
+    coordinator = _coordinator_for(hass, {"host": "http://192.168.1.100"})
+    coordinator._data["autopid_data"] = {"SOC": 72}
+
+    with patch.object(
+        WiCANDataUpdateCoordinator,
+        "_async_fetch_status",
+        return_value={"batt_voltage": "13.9V"},
+    ):
+        data = await coordinator._async_update_data()
+
+    assert data["autopid_data"] == {"SOC": 72}
+    assert data["status"]["batt_voltage"] == "13.9V"

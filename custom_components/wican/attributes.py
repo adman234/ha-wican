@@ -1,7 +1,11 @@
 from dataclasses import dataclass, field
 
 from homeassistant.components.binary_sensor import BinarySensorEntityDescription
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntityDescription
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntityDescription,
+    SensorStateClass,
+)
 from homeassistant.helpers.entity import EntityCategory
 
 
@@ -32,6 +36,7 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:car-battery",
         device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement="V",
         suggested_display_precision=1,
         extra_attributes=[
@@ -40,6 +45,32 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
             "batt_alert_protocol",
             "batt_alert_topic",
             "batt_alert_time",
+        ],
+    ),
+    WiCANSensorEntityDescription(
+        key="battery_temp_min_c",
+        translation_key="battery_temp_min_c",
+        icon="mdi:thermometer-low",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="°C",
+        suggested_display_precision=0,
+        extra_attributes=[
+            "battery_temp_valid",
+            "battery_temp_age_ms",
+        ],
+    ),
+    WiCANSensorEntityDescription(
+        key="battery_temp_max_c",
+        translation_key="battery_temp_max_c",
+        icon="mdi:thermometer-high",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="°C",
+        suggested_display_precision=0,
+        extra_attributes=[
+            "battery_temp_valid",
+            "battery_temp_age_ms",
         ],
     ),
     WiCANSensorEntityDescription(

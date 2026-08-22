@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 import logging
 from typing import TYPE_CHECKING, Any
 
+import aiohttp
 from homeassistant.exceptions import ConfigEntryError
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from yarl import URL
 
-from .const import DOMAIN, WICAN_DATA_UPDATE_INTERVAL
+from .const import (
+    DOMAIN,
+    STATUS_ENDPOINT,
+    STATUS_POLL_ALLOWED_KEYS,
+    STATUS_POLL_TIMEOUT,
+    WICAN_DATA_UPDATE_INTERVAL,
+)
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -18,8 +28,9 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
-# WiCAN is push-based via webhooks, so we don't need frequent polling
-# This is just for fallback/health check
+# Vehicle data arrives by webhook push. Device status (12V battery voltage, HV
+# battery temperature) is polled from /check_status instead, because the webhook
+# task only posts while the device is in AutoPID mode.
 UPDATE_INTERVAL = timedelta(seconds=WICAN_DATA_UPDATE_INTERVAL)
 
 
@@ -43,23 +54,101 @@ class WiCANDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_entry=config_entry,
         )
 
-    async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from WiCAN device.
+    def _status_urls(self) -> list[str]:
+        """Build the ordered /check_status URLs to try for this device."""
+        runtime = getattr(self.config_entry, "runtime_data", None)
+        cached_ip = getattr(runtime, "cached_resolved_ip", None)
 
-        This is a push-based integration, so we don't actively poll.
-        This method exists for health checks and fallback scenarios.
-        The real updates come through handle_webhook_data().
+        candidates: list[str | None] = [
+            f"http://{cached_ip}" if cached_ip else None,
+            getattr(runtime, "device_host", None),
+            self.config_entry.data.get("host"),
+            self.config_entry.data.get("mdns"),
+        ]
+
+        urls: list[str] = []
+        for candidate in candidates:
+            if not candidate:
+                continue
+            raw = str(candidate).strip()
+            if not raw.startswith(("http://", "https://")):
+                raw = f"http://{raw}"
+            try:
+                base = URL(raw).with_query(None).with_fragment(None)
+                url = str(base.with_path(STATUS_ENDPOINT))
+            except ValueError:
+                continue
+            if url not in urls:
+                urls.append(url)
+        return urls
+
+    def _status_belongs_to_device(self, payload: dict[str, Any]) -> bool:
+        """Return True unless the payload clearly came from a different device."""
+        stored = self.config_entry.data.get("device_id")
+        incoming = payload.get("device_id")
+        if not stored or not incoming:
+            return True
+        if incoming == stored:
+            return True
+        _LOGGER.warning(
+            "Ignoring status from unexpected device (expected %s, got %s)",
+            stored,
+            incoming,
+        )
+        return False
+
+    async def _async_fetch_status(self) -> dict[str, Any] | None:
+        """Poll the device's /check_status endpoint, or None if unreachable."""
+        session = async_get_clientsession(self.hass)
+
+        for url in self._status_urls():
+            try:
+                async with asyncio.timeout(STATUS_POLL_TIMEOUT), session.get(url) as resp:
+                    if resp.status >= 300:
+                        _LOGGER.debug("Status poll %s returned HTTP %s", url, resp.status)
+                        continue
+                    payload = await resp.json(content_type=None)
+            except (TimeoutError, aiohttp.ClientError) as err:
+                _LOGGER.debug("Status poll failed for %s: %s", url, err)
+                continue
+            except ValueError as err:
+                _LOGGER.debug("Status poll gave invalid JSON from %s: %s", url, err)
+                continue
+
+            if isinstance(payload, dict) and self._status_belongs_to_device(payload):
+                _LOGGER.debug("Polled status from %s", url)
+                return payload
+
+        _LOGGER.debug("No WiCAN status endpoint responded")
+        return None
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Poll device status and merge it into the webhook-pushed data.
+
+        Vehicle parameters still arrive by webhook via handle_webhook_data().
+        This poll only refreshes the device's own status block, which the
+        webhook cannot deliver unless the device is in AutoPID mode.
+
+        A device that is asleep or off the network is expected, so a failed poll
+        keeps the last known values instead of raising UpdateFailed and marking
+        every entity unavailable.
         """
-        # For push-based integrations, we just return the current data
-        # The webhook handler will call async_set_updated_data() when new data arrives
+        status = await self._async_fetch_status()
+        if status:
+            # Drop everything not on the allowlist; see STATUS_POLL_ALLOWED_KEYS.
+            safe = {k: v for k, v in status.items() if k in STATUS_POLL_ALLOWED_KEYS}
+            merged = dict(self._data.get("status") or {})
+            merged.update(safe)
+            self._data["status"] = merged
+
         return self._data
 
     async def async_config_entry_first_refresh(self) -> None:
         """Perform first refresh of the coordinator.
 
-        For WiCAN, this is a push-based integration, so we don't poll for data.
-        This method initializes the coordinator with empty data and succeeds immediately.
-        Entities will be created and will update when the first webhook push arrives.
+        Polls /check_status once so the device's own sensors have values right
+        away. Vehicle parameters still wait for the first webhook push, and a
+        device that is unreachable here is not treated as a setup failure.
         """
         _LOGGER.debug(
             "First refresh for WiCAN coordinator (push-based, no polling required)",
