@@ -6,6 +6,11 @@
 > and defeated the `.local` guard on the resolved-IP cache. See
 > `_strip_host_trailing_dot` in `custom_components/wican/__init__.py`; existing
 > config entries are repaired on the next restart.
+>
+> It also polls `/check_status` so the 12V battery voltage and HV battery
+> temperature work outside AutoPID mode, and drops the firmware `update` entity,
+> which would otherwise flash stock meatPi firmware over the preconditioning
+> firmware from [L1Z3/wicant-i-precondition](https://github.com/L1Z3/wicant-i-precondition).
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 

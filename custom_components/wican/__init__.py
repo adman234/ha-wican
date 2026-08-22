@@ -43,11 +43,17 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+# Platform.UPDATE is deliberately omitted. The update entity tracks releases from
+# meatpiHQ/wican-fw and flashes them to /upload/ota.bin, which would overwrite the
+# preconditioning firmware from L1Z3/wicant-i-precondition with stock WiCAN firmware
+# and wipe the device config. It offers the update unconditionally because the device
+# parses its version with sscanf("v%ld.%ld"), so "v4.20_eb-0.1.2-beta" reports as
+# "4.20" and every upstream release looks newer. Flash preconditioning firmware
+# through the device's own web UI instead.
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
     Platform.DEVICE_TRACKER,
-    Platform.UPDATE,
 ]
 
 # Type alias for config entry with runtime data

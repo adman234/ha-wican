@@ -22,6 +22,15 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 
+pytestmark = pytest.mark.skip(
+    reason=(
+        "Platform.UPDATE is not loaded in this fork: the update entity would flash "
+        "stock meatpiHQ/wican-fw firmware over the preconditioning firmware. "
+        "See PLATFORMS in custom_components/wican/__init__.py."
+    ),
+)
+
+
 @pytest.fixture(autouse=True)
 def mock_params_update():
     """Mock async_update_params_from_github to prevent blocking I/O in tests."""
