@@ -48,6 +48,19 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
         ],
     ),
     WiCANSensorEntityDescription(
+        key="battery_soc_pct",
+        translation_key="battery_soc_pct",
+        icon="mdi:battery-charging-high",
+        device_class=SensorDeviceClass.BATTERY,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="%",
+        suggested_display_precision=1,
+        extra_attributes=[
+            "battery_soc_valid",
+            "battery_soc_age_ms",
+        ],
+    ),
+    WiCANSensorEntityDescription(
         key="battery_temp_min_c",
         translation_key="battery_temp_min_c",
         icon="mdi:thermometer-low",

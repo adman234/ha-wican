@@ -65,7 +65,9 @@ STATUS_POLL_ALLOWED_KEYS = frozenset(
         "vpn_status", "vpn_ip",
         # sensors
         "batt_voltage", "battery_temp_valid", "battery_temp_min_c",
-        "battery_temp_max_c", "battery_temp_age_ms", "uptime", "uptime_sec",
+        "battery_temp_max_c", "battery_temp_age_ms",
+        "battery_soc_valid", "battery_soc_pct", "battery_soc_age_ms",
+        "uptime", "uptime_sec",
         "ecu_status", "obd_chip_status", "ble_status", "ble_power",
         # CAN / device config
         "can_datarate", "can_mode", "can_bus_count",

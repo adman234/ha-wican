@@ -47,6 +47,9 @@
       },
       "battery_temp_max_c": {
         "name": "HV Battery Temperature Max"
+      },
+      "battery_soc_pct": {
+        "name": "HV Battery State of Charge"
       }
     },
     "binary_sensor": {
