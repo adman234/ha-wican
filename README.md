@@ -1,3 +1,12 @@
+> **Fork note**
+>
+> This is a fork of [jay-oswald/ha-wican](https://github.com/jay-oswald/ha-wican) at `v1.0.1-beta2`,
+> with one fix on top: zeroconf hostnames keep their trailing root-label dot
+> (`wican_xxxx.local.`), which produced device URLs like `http://wican_xxxx.local./`
+> and defeated the `.local` guard on the resolved-IP cache. See
+> `_strip_host_trailing_dot` in `custom_components/wican/__init__.py`; existing
+> config entries are repaired on the next restart.
+
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
 
 # About

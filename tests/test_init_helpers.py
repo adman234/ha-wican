@@ -16,6 +16,7 @@ from custom_components.wican import (
     _build_webhook_endpoint,
     _normalize_ip,
     _extract_request_ip,
+    _strip_host_trailing_dot,
 )
 
 
@@ -261,3 +262,42 @@ def test_extract_request_ip_transport_empty_peername():
     
     result = _extract_request_ip(request)
     assert result == "10.0.0.6"
+
+
+def test_strip_host_trailing_dot_with_none():
+    """Test _strip_host_trailing_dot passes None through."""
+    assert _strip_host_trailing_dot(None) is None
+
+
+def test_strip_host_trailing_dot_with_empty():
+    """Test _strip_host_trailing_dot passes an empty string through."""
+    assert _strip_host_trailing_dot("") == ""
+
+
+def test_strip_host_trailing_dot_mdns_hostname():
+    """Test the fully qualified zeroconf hostname loses its root-label dot."""
+    assert (
+        _strip_host_trailing_dot("http://wican_58e6c5984691.local./")
+        == "http://wican_58e6c5984691.local/"
+    )
+
+
+def test_strip_host_trailing_dot_keeps_port_and_path():
+    """Test port and path survive the rewrite."""
+    assert (
+        _strip_host_trailing_dot("http://wican_test.local.:8080/api/webhook")
+        == "http://wican_test.local:8080/api/webhook"
+    )
+
+
+def test_strip_host_trailing_dot_noop_without_dot():
+    """Test a normal hostname is returned unchanged."""
+    assert (
+        _strip_host_trailing_dot("http://wican_test.local")
+        == "http://wican_test.local"
+    )
+
+
+def test_strip_host_trailing_dot_noop_for_ip():
+    """Test an IP based URL is returned unchanged."""
+    assert _strip_host_trailing_dot("http://192.168.1.100") == "http://192.168.1.100"

@@ -88,7 +88,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         properties = discovery_info.properties or {}
         host = discovery_info.host
         host_ip = _string_ip(discovery_info.ip_address)
-        hostname = getattr(discovery_info, "hostname", "") or ""
+        # Zeroconf hostnames are fully qualified and end in a root-label dot
+        # ("wican_x.local."). Strip it so the stored mdns URL, the device
+        # configuration_url and the ".local" checks downstream all see a
+        # normal hostname.
+        hostname = (getattr(discovery_info, "hostname", "") or "").rstrip(".")
         port = discovery_info.port
 
         if not host and not host_ip:

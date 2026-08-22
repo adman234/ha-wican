@@ -128,6 +128,25 @@ def _ensure_http_scheme(value: str | None) -> str | None:
     return f"http://{value}"
 
 
+def _strip_host_trailing_dot(url: str | None) -> str | None:
+    """Drop the mDNS root-label dot from the host part of a URL.
+
+    Zeroconf reports fully qualified hostnames ("wican_x.local."), and entries
+    created before that dot was stripped at discovery still carry it. A trailing
+    dot also defeats the ".local" check used when caching a resolved IP.
+    """
+    if not url:
+        return url
+    try:
+        parsed = URL(url)
+        host = parsed.host
+        if not host or not host.endswith("."):
+            return url
+        return str(parsed.with_host(host.rstrip(".")))
+    except (ValueError, TypeError):
+        return url
+
+
 def _http_url_from_host(host: str | None, port: int | None = None) -> str | None:
     """Build an http URL from a bare host/ip string."""
     if not host:
@@ -381,7 +400,7 @@ def _normalize_connection_urls(hass: HomeAssistant, entry: WiCANConfigEntry) -> 
     # Normalize mdns
     mdns = updated_data.get("mdns")
     if mdns:
-        normalized_mdns = _ensure_http_scheme(mdns)
+        normalized_mdns = _strip_host_trailing_dot(_ensure_http_scheme(mdns))
         if normalized_mdns != mdns:
             updated_data["mdns"] = normalized_mdns
             data_changed = True
@@ -389,7 +408,7 @@ def _normalize_connection_urls(hass: HomeAssistant, entry: WiCANConfigEntry) -> 
     # Normalize host
     host = updated_data.get("host")
     if host:
-        normalized_host = _ensure_http_scheme(host)
+        normalized_host = _strip_host_trailing_dot(_ensure_http_scheme(host))
         if normalized_host != host:
             updated_data["host"] = normalized_host
             data_changed = True
