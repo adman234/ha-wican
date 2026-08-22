@@ -16,6 +16,7 @@ from homeassistant.components import webhook
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_WEBHOOK_ID, EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.exceptions import ConfigEntryError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 import voluptuous as vol
@@ -377,6 +378,9 @@ async def async_setup_entry(  # noqa: C901, PLR0915
     # to avoid triggering update listener which would cause duplicate registrations
     _normalize_connection_urls(hass, entry)
 
+    # Clean up entities from the update platform this fork no longer loads.
+    _async_remove_update_entities(hass, entry)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     _schedule_webhook_registration(hass, entry)
@@ -392,6 +396,21 @@ async def async_unload_entry(
     """Unload a config entry."""
     webhook.async_unregister(hass, entry.runtime_data.webhook_id)
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+def _async_remove_update_entities(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
+    """Delete registry rows left behind by the removed update platform.
+
+    Home Assistant keeps the registry entry when a platform stops providing an
+    entity and shows it as "no longer provided" rather than removing it, so
+    dropping Platform.UPDATE leaves a dead firmware entity on the device page.
+    """
+    registry = er.async_get(hass)
+
+    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if entity.domain == Platform.UPDATE:
+            _LOGGER.info("Removing stale update entity %s", entity.entity_id)
+            registry.async_remove(entity.entity_id)
 
 
 def _normalize_connection_urls(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
