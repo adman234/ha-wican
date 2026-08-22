@@ -31,9 +31,10 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
         ],
     ),
     WiCANSensorEntityDescription(
+        # Not EntityCategory.DIAGNOSTIC: this is the car's 12V battery, a primary
+        # reading alongside HV state of charge and temperature, not device health.
         key="batt_voltage",
         translation_key="batt_voltage",
-        entity_category=EntityCategory.DIAGNOSTIC,
         icon="mdi:car-battery",
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
