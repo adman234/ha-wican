@@ -64,41 +64,16 @@ class GitHubReleasesCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 response.raise_for_status()
                 releases = await response.json()
 
-            # Filter for latest non-prerelease
-            stable_releases = [r for r in releases if not r.get("prerelease", False)]
-
-            if not stable_releases:
-                _LOGGER.warning("No stable releases found")
+            # The preconditioning firmware ships every build as a GitHub
+            # prerelease, so filtering them out would leave nothing. Releases come
+            # back newest-first; both hardware variants ship as assets on the same
+            # release, so there is no per-device release filtering to do.
+            if not releases:
+                _LOGGER.warning("No releases found")
                 return {}
 
-            # Filter by device type (PRO vs standard)
-            # PRO releases have "PRO" in name or "P" in tag_name (case-insensitive)
-            def is_pro_release(release: dict[str, Any]) -> bool:
-                """Check if release is for WiCAN-PRO."""
-                name = str(release.get("name", "")).upper()
-                tag = str(release.get("tag_name", "")).upper()
-                return "PRO" in name or "P" in tag
-
-            device_specific_releases = [
-                r for r in stable_releases
-                if is_pro_release(r) == self._is_pro
-            ]
-
-            if not device_specific_releases:
-                device_type = "PRO" if self._is_pro else "standard"
-                _LOGGER.warning(
-                    "No stable %s releases found (found %d releases for other type)",
-                    device_type,
-                    len(stable_releases),
-                )
-                return {}
-
-            latest = device_specific_releases[0]
-            _LOGGER.debug(
-                "Latest %s release: %s",
-                "PRO" if self._is_pro else "standard",
-                latest.get("tag_name"),
-            )
+            latest = releases[0]
+            _LOGGER.debug("Latest release: %s", latest.get("tag_name"))
         except TimeoutError as err:
             raise UpdateFailed("Timeout fetching GitHub releases") from err
         except aiohttp.ClientError as err:

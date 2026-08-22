@@ -24,9 +24,11 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.skip(
     reason=(
-        "Platform.UPDATE is not loaded in this fork: the update entity would flash "
-        "stock meatpiHQ/wican-fw firmware over the preconditioning firmware. "
-        "See PLATFORMS in custom_components/wican/__init__.py."
+        "These tests encode stock meatpiHQ/wican-fw semantics: stable-only "
+        "releases, PRO/USB asset names, and fw_version comparison. This fork "
+        "tracks the preconditioning firmware, which ships prereleases, names "
+        "assets _obd/_custom, and is identified by git_version. They need "
+        "rewriting against the new fixtures before they can be re-enabled."
     ),
 )
 

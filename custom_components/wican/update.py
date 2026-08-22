@@ -91,20 +91,23 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
     @property
     def installed_version(self) -> str | None:
         """Return the installed firmware version."""
-        # Get from coordinator data (from webhook status)
-        fw_version = self.coordinator.data.get("status", {}).get("fw_version")
-        if not fw_version:
-            # Fallback to config entry data
-            fw_version = self.config_entry.data.get("fw_version")
-        return self._normalize_version(fw_version)
+        # git_version carries the full build string ("v4.20_eb-0.1.2-beta").
+        # fw_version is built with sscanf("v%ld.%ld") and collapses every
+        # preconditioning build to "4.20", so it cannot identify a release.
+        status = self.coordinator.data.get("status", {})
+        version = status.get("git_version") or self.config_entry.data.get("git_version")
+        if not version:
+            return None
+        return str(version).lstrip("v")
 
     @property
     def latest_version(self) -> str | None:
         """Return the latest firmware version from GitHub."""
         if not self._github_coordinator.data:
             return None
-        version = self._github_coordinator.data.get("tag_name", "").lstrip("v")
-        return self._normalize_version(version)
+        # Compared verbatim against git_version; _normalize_version() strips
+        # trailing "p"/"u" markers that only exist in stock meatPi tags.
+        return self._github_coordinator.data.get("tag_name", "").lstrip("v") or None
 
     def _normalize_version(self, version: str | None) -> str | None:
         """Normalize version string by removing device-specific suffixes.
@@ -222,38 +225,20 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
                 response.raise_for_status()
                 releases = await response.json()
 
-            # Determine device type for filtering
-            hw_version = self.config_entry.data.get("hw_version", "").lower()
-            is_pro = "pro" in hw_version
-
-            # Search for matching release
-            # Version can have suffixes in GitHub (4.45p, 4.13u) but we get normalized version
+            # Preconditioning builds all ship as prereleases, and both hardware
+            # variants are assets on the same release, so match on the tag alone.
             for release in releases:
-                if release.get("prerelease", False):
-                    continue
-
                 tag_name = release.get("tag_name", "").lstrip("v")
-                normalized_tag = self._normalize_version(tag_name)
-
-                # Check if this release matches the requested version
-                if normalized_tag != version:
+                if tag_name != version:
                     continue
 
-                # Check if this release is for the correct device type
-                name = str(release.get("name", "")).upper()
-                tag = str(tag_name).upper()
-                is_pro_release = "PRO" in name or "P" in tag
-
-                if is_pro_release == is_pro:
-                    _LOGGER.info(
-                        "Found GitHub release %s for version %s",
-                        tag_name,
-                        version,
-                    )
-                    return release
+                _LOGGER.info(
+                    "Found GitHub release %s for version %s", tag_name, version,
+                )
+                return release
 
             raise FirmwareVersionNotFoundError(
-                f"Version {version} not found in GitHub releases for this device type",
+                f"Version {version} not found in GitHub releases",
             )
 
         except TimeoutError as err:
@@ -301,35 +286,27 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
             )
 
         # Determine device type from hardware version
-        hw_version = self.config_entry.data.get("hw_version", "").lower()
-        is_pro = "pro" in hw_version
-        is_usb = "usb" in hw_version
-
-        # Find the .bin file that matches device type
-        # Firmware naming patterns:
-        # - PRO: wican-fw_obd_pro_vXXXp.bin
-        # - USB: wican-fw_usb_vXXXu.bin
-        # - OBD: wican-fw_obd_vXXX.bin
+        status = self.coordinator.data.get("status", {})
+        hw_version = (
+            status.get("hw_version") or self.config_entry.data.get("hw_version", "")
+        ).lower()
+        # Preconditioning releases carry two assets:
+        # - wican-fw_obd_*.bin     WiCAN original (esp32c3)
+        # - wican-fw_custom_*.bin  customised MITM board (esp32s3)
+        wants_custom = "custom" in hw_version
         firmware_asset = None
         for asset in assets:
             name = asset.get("name", "").lower()
             if not name.endswith(".bin"):
                 continue
 
-            # Match asset to device type
-            has_pro = "pro" in name
-            has_usb = "usb" in name and "pro" not in name
-            has_obd = "obd" in name and "usb" not in name and "pro" not in name
-
-            if (is_pro and has_pro) or (is_usb and has_usb):
-                firmware_asset = asset
-                break
-            if not is_pro and not is_usb and has_obd:
+            has_custom = "custom" in name
+            if has_custom == wants_custom:
                 firmware_asset = asset
                 break
 
         if not firmware_asset:
-            device_type = "PRO" if is_pro else ("USB" if is_usb else "OBD")
+            device_type = "custom" if wants_custom else "OBD"
             raise FirmwareVersionNotFoundError(
                 f"No {device_type} firmware found in release {version}",
             )

@@ -29,8 +29,10 @@ MAX_GPS_LONGITUDE = 180.0
 
 # GitHub API
 GITHUB_API_RELEASES_URL = "https://api.github.com/repos/{owner}/{repo}/releases"
-GITHUB_OWNER = "meatpiHQ"
-GITHUB_REPO = "wican-fw"
+# The preconditioning firmware, not stock meatpiHQ/wican-fw. Flashing stock
+# firmware onto a preconditioning kit would remove preconditioning entirely.
+GITHUB_OWNER = "L1Z3"
+GITHUB_REPO = "wicant-i-precondition"
 
 # Firmware Update
 FIRMWARE_DOWNLOAD_TIMEOUT = 120  # 2 minutes to download from GitHub
