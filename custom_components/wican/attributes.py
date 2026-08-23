@@ -52,6 +52,17 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
         ],
     ),
     WiCANSensorEntityDescription(
+        # Byte 6 of CAN frame 0x30E, whole kW.
+        key="charge_power_kw",
+        translation_key="charge_power_kw",
+        icon="mdi:ev-station",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="kW",
+        suggested_display_precision=0,
+        extra_attributes=["charging", "charge_power_age_ms"],
+    ),
+    WiCANSensorEntityDescription(
         key="battery_soc_pct",
         translation_key="battery_soc_pct",
         icon="mdi:battery-charging-high",
@@ -108,6 +119,14 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
 )
 
 BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
+    WiCANBinarySensorEntityDescription(
+        # True while charge_power_kw is above zero.
+        key="charging",
+        translation_key="charging",
+        icon="mdi:ev-station",
+        device_class=BinarySensorDeviceClass.BATTERY_CHARGING,
+        extra_attributes=["charge_power_kw", "charge_power_age_ms"],
+    ),
     WiCANBinarySensorEntityDescription(
         # Decoded from the low nibble of byte 0 of CAN frame 0x038.
         key="car_ready",
