@@ -58,6 +58,9 @@
       },
       "ecu_status": {
         "name": "ECU Online"
+      },
+      "car_ready": {
+        "name": "Car Ready"
       }
     },
     "device_tracker": {

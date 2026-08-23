@@ -1,6 +1,9 @@
 from dataclasses import dataclass, field
 
-from homeassistant.components.binary_sensor import BinarySensorEntityDescription
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntityDescription,
+)
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntityDescription,
@@ -105,6 +108,18 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
 )
 
 BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
+    WiCANBinarySensorEntityDescription(
+        # Decoded from the low nibble of byte 0 of CAN frame 0x038.
+        key="car_ready",
+        translation_key="car_ready",
+        icon="mdi:car-electric",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        extra_attributes=[
+            "car_power_state",
+            "car_power_raw",
+            "car_power_age_ms",
+        ],
+    ),
     WiCANBinarySensorEntityDescription(
         key="ble_status",
         translation_key="ble_status",

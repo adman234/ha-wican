@@ -69,6 +69,8 @@ STATUS_POLL_ALLOWED_KEYS = frozenset(
         "batt_voltage", "battery_temp_valid", "battery_temp_min_c",
         "battery_temp_max_c", "battery_temp_age_ms",
         "battery_soc_valid", "battery_soc_pct", "battery_soc_age_ms",
+        "car_power_valid", "car_ready", "car_power_state",
+        "car_power_raw", "car_power_age_ms", "sleep_can_protect",
         "uptime", "uptime_sec",
         "ecu_status", "obd_chip_status", "ble_status", "ble_power",
         # CAN / device config
