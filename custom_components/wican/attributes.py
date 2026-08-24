@@ -52,6 +52,15 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
         ],
     ),
     WiCANSensorEntityDescription(
+        # off / ready / charging, from the low nibble of 0x038 byte 0.
+        key="car_power_state",
+        translation_key="car_power_state",
+        icon="mdi:car-electric-outline",
+        device_class=SensorDeviceClass.ENUM,
+        options=["off", "ready", "charging", "unknown"],
+        extra_attributes=["car_power_raw", "car_power_age_ms"],
+    ),
+    WiCANSensorEntityDescription(
         key="battery_soc_pct",
         translation_key="battery_soc_pct",
         icon="mdi:battery-charging-high",

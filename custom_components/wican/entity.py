@@ -35,7 +35,13 @@ class WiCANEntity(CoordinatorEntity[WiCANDataUpdateCoordinator]):
         self._attr_unique_id = f"{config_entry.entry_id}_{entity_description.key}"
         self.entity_description = entity_description
         self.webhook_id = config_entry.runtime_data.webhook_id
-        self._attr_name = entity_description.key
+        # Only fall back to the raw key when the description offers nothing
+        # better. Setting _attr_name unconditionally overrode translation_key,
+        # so every entity displayed its snake_case key.
+        if not getattr(entity_description, "translation_key", None) and not getattr(
+            entity_description, "name", None
+        ):
+            self._attr_name = entity_description.key
         self._attr_device_info = DeviceInfo(
             connections={(DOMAIN, config_entry.entry_id)},
             manufacturer="MeatPi",

@@ -50,6 +50,15 @@
       },
       "battery_soc_pct": {
         "name": "HV Battery State of Charge"
+      },
+      "car_power_state": {
+        "name": "Car Power State",
+        "state": {
+          "off": "Off",
+          "ready": "Ready",
+          "charging": "Charging",
+          "unknown": "Unknown"
+        }
       }
     },
     "binary_sensor": {
