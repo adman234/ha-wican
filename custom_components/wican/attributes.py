@@ -109,7 +109,7 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
 
 BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
     WiCANBinarySensorEntityDescription(
-        # True while charge_power_kw is above zero.
+        # True while the 0x038 power state low nibble reads 0x06.
         key="charging",
         translation_key="charging",
         icon="mdi:ev-station",
