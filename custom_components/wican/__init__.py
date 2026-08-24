@@ -16,6 +16,7 @@ from homeassistant.components import webhook
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_WEBHOOK_ID, EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.exceptions import ConfigEntryError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 import voluptuous as vol
@@ -373,6 +374,8 @@ async def async_setup_entry(  # noqa: C901, PLR0915
     # to avoid triggering update listener which would cause duplicate registrations
     _normalize_connection_urls(hass, entry)
 
+    _async_remove_retired_entities(hass, entry)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     _schedule_webhook_registration(hass, entry)
@@ -388,6 +391,23 @@ async def async_unload_entry(
     """Unload a config entry."""
     webhook.async_unregister(hass, entry.runtime_data.webhook_id)
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+# Entities this integration used to create. Home Assistant keeps a registry row
+# when a platform stops providing an entity and shows it as "no longer provided"
+# rather than deleting it, so retired keys are removed explicitly.
+RETIRED_ENTITY_KEYS = ("charge_power_kw",)
+
+
+def _async_remove_retired_entities(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
+    """Delete registry rows for entities this integration no longer creates."""
+    registry = er.async_get(hass)
+    retired = {f"{entry.entry_id}_{key}" for key in RETIRED_ENTITY_KEYS}
+
+    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if entity.unique_id in retired:
+            _LOGGER.info("Removing retired entity %s", entity.entity_id)
+            registry.async_remove(entity.entity_id)
 
 
 def _normalize_connection_urls(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:

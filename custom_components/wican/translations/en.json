@@ -50,9 +50,6 @@
       },
       "battery_soc_pct": {
         "name": "HV Battery State of Charge"
-      },
-      "charge_power_kw": {
-        "name": "Charging Power"
       }
     },
     "binary_sensor": {

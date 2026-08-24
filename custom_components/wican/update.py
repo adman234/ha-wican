@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import secrets
 from typing import TYPE_CHECKING, Any
 
@@ -43,6 +44,15 @@ if TYPE_CHECKING:
     from . import WiCANConfigEntry
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _looks_like_release(version: str) -> bool:
+    """Return True when the version resembles a release tag rather than a SHA.
+
+    Release tags look like "4.20_eb-0.1.2-beta"; a build from a branch reports
+    the abbreviated commit it was built from, e.g. "6bfd385".
+    """
+    return bool(re.match(r"^\d+\.\d+", version.strip()))
 
 PARALLEL_UPDATES = 1  # Only one update at a time
 
@@ -105,6 +115,19 @@ class WiCANUpdateEntity(WiCANEntity, UpdateEntity):
         """Return the latest firmware version from GitHub."""
         if not self._github_coordinator.data:
             return None
+        # A build made from a branch reports a bare commit SHA rather than a
+        # release tag, and would never compare equal to any release. Offering an
+        # update there is worse than useless: installing it flashes a release
+        # over locally built firmware and silently removes whatever that build
+        # added. Report no update available instead.
+        installed = self.installed_version
+        if installed and not _looks_like_release(installed):
+            _LOGGER.debug(
+                "Installed firmware %s is not a release build; not offering updates",
+                installed,
+            )
+            return installed
+
         # Compared verbatim against git_version; _normalize_version() strips
         # trailing "p"/"u" markers that only exist in stock meatPi tags.
         return self._github_coordinator.data.get("tag_name", "").lstrip("v") or None
