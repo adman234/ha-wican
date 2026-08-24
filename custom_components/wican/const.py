@@ -72,7 +72,7 @@ STATUS_POLL_ALLOWED_KEYS = frozenset(
         "car_power_valid", "car_ready", "car_power_state",
         "car_power_raw", "car_power_age_ms", "sleep_can_protect",
         "charge_power_valid", "charge_power_kw", "charging",
-        "charge_power_age_ms", "sleep_charge_protect",
+        "charge_power_age_ms", "charge_frame_raw", "sleep_charge_protect",
         "uptime", "uptime_sec",
         "ecu_status", "obd_chip_status", "ble_status", "ble_power",
         # CAN / device config
