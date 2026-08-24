@@ -114,7 +114,7 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
         translation_key="charging",
         icon="mdi:ev-station",
         device_class=BinarySensorDeviceClass.BATTERY_CHARGING,
-        extra_attributes=["car_power_state", "car_power_raw", "charge_frame_raw"],
+        extra_attributes=["car_power_state", "car_power_raw", "car_power_age_ms"],
     ),
     WiCANBinarySensorEntityDescription(
         # Decoded from the low nibble of byte 0 of CAN frame 0x038.
