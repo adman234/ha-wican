@@ -4,10 +4,10 @@
     "codeowners": ["@jay-oswald"],
     "config_flow": true,
     "dependencies": ["webhook"],
-    "documentation": "https://github.com/jay-oswald/ha-wican",
+    "documentation": "https://github.com/adman234/ha-wican",
     "integration_type": "device",
     "iot_class": "local_push",
-    "issue_tracker": "https://github.com/jay-oswald/ha-wican/issues",
+    "issue_tracker": "https://github.com/adman234/ha-wican/issues",
     "requirements": [],
     "version": "1.0.13",
     "zeroconf": [
