@@ -71,3 +71,11 @@ To change the unit of measure of an entity in HomeAssistant, it needs to be upda
 * Open the WiCAN device in a web-browser (e.g. via link "VISIT" from the WiCAN device page in HomeAssistant)
 * Go to tab "Automate", find the respective PID, update the "unit" and press "Submit changes". Further details about the car configuration are part of the official WiCAN device documentation: [Automate](https://meatpihq.github.io/wican-fw/config/automate/usage)
 * After changing the unit on the WiCAN device, go to HomeAssistant and reload the WiCAN integration. This will automatically update the unit of measure for the respective entity.
+
+## License
+
+[jay-oswald/ha-wican](https://github.com/jay-oswald/ha-wican) has no license file, so it is "all rights reserved" by default and I cannot
+license this fork. I keep my changes here for my own use and to offer back to the
+author. If you want to reuse any of it, ask the upstream author first. Nothing in
+this repository grants a license to the upstream code, and the changes I made
+cannot be separated from it.
