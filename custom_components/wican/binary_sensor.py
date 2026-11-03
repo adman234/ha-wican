@@ -22,7 +22,8 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 
-TRUE_STRINGS = {"enable", "true", "online"}
+# "ready" is can_ready_state; its other value is "Not Ready".
+TRUE_STRINGS = {"enable", "true", "online", "ready"}
 
 def is_true_status(value: str) -> bool:
     if isinstance(value, str):

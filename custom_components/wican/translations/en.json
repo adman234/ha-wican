@@ -51,13 +51,12 @@
       "battery_soc_pct": {
         "name": "HV Battery State of Charge"
       },
-      "car_power_state": {
-        "name": "Car Power State",
+      "egmp_car_model_detected": {
+        "name": "Detected Car Model",
         "state": {
-          "off": "Off",
-          "ready": "Ready",
-          "charging": "Charging",
-          "unknown": "Unknown"
+          "ev6": "Kia EV6",
+          "ioniq5": "Hyundai Ioniq 5",
+          "ioniq6": "Hyundai Ioniq 6"
         }
       }
     },
@@ -68,11 +67,14 @@
       "ecu_status": {
         "name": "ECU Online"
       },
-      "car_ready": {
+      "can_ready_state": {
         "name": "Car Ready"
       },
-      "charging": {
-        "name": "Charging"
+      "precondition_requested": {
+        "name": "Preconditioning Requested"
+      },
+      "precondition_active": {
+        "name": "Preconditioning Active"
       }
     },
     "device_tracker": {

@@ -48,8 +48,9 @@ GITHUB_RELEASES_UPDATE_INTERVAL = 3600  # 1 hour
 # WiCAN Data Coordinator (push-based fallback polling)
 WICAN_DATA_UPDATE_INTERVAL = 60  # seconds between /check_status polls
 
-# Device status endpoint polled for values the webhook only carries in
-# AutoPID mode (12V battery voltage, HV battery temperature).
+# Device status endpoint, polled as a backup to the webhook. In AutoPID mode the
+# webhook carries the same status block; the poll fills values in right after a
+# restart and keeps them current if the webhook stops posting.
 STATUS_ENDPOINT = "/check_status"
 STATUS_POLL_TIMEOUT = 10  # seconds
 
@@ -69,9 +70,8 @@ STATUS_POLL_ALLOWED_KEYS = frozenset(
         "batt_voltage", "battery_temp_valid", "battery_temp_min_c",
         "battery_temp_max_c", "battery_temp_age_ms",
         "battery_soc_valid", "battery_soc_pct", "battery_soc_age_ms",
-        "car_power_valid", "car_ready", "car_power_state",
-        "car_power_raw", "car_power_age_ms", "sleep_can_protect",
-        "charging", "sleep_charge_protect",
+        "can_ready_state", "egmp_car_model_detected",
+        "precondition_requested", "precondition_active", "precondition_starting",
         "uptime", "uptime_sec",
         "ecu_status", "obd_chip_status", "ble_status", "ble_power",
         # CAN / device config

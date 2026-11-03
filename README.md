@@ -13,17 +13,31 @@ run stock WiCAN firmware, use upstream.
 
 ## What is different from upstream
 
-- **Works outside AutoPID mode.** It polls `/check_status`, so the 12V battery voltage
-  and HV battery temperature work with the preconditioning firmware.
-- **New sensors**: HV battery state of charge, Car Ready, Car Power State, Charging, and
-  12V battery voltage shown as a primary sensor. The Charging sensor carries the raw
-  `0x30E` frame as an attribute.
-- **No firmware update entity.** Upstream's would offer to flash stock meatPi firmware
-  over the preconditioning firmware.
+- **Status polling.** Besides the webhook, it polls `/check_status` every 60 seconds.
+  In AutoPID mode the webhook carries the same status block, so the poll is a backup:
+  values show up right after a restart and keep updating if the webhook stops posting.
+- **Preconditioning firmware sensors**, read from the status the firmware reports:
+  - HV battery state of charge
+  - HV battery temperature (min and max)
+  - Car Ready (on while the car is in READY)
+  - Preconditioning Requested and Preconditioning Active (with a `precondition_starting`
+    attribute)
+  - Detected Car Model (diagnostic: EV6, Ioniq 5 or Ioniq 6)
+  - 12V battery voltage, shown as a primary sensor rather than a diagnostic one
+- **Firmware updates come from the preconditioning releases.** The update entity tracks
+  [L1Z3/wicant-i-precondition](https://github.com/L1Z3/wicant-i-precondition/releases)
+  instead of stock meatPi firmware, which would remove preconditioning if installed.
 - **Hostname fix.** Zeroconf hostnames kept their trailing dot (`wican_xxxx.local.`),
   which broke device URLs and the resolved-IP cache. Existing entries are repaired on the
   next restart.
 - Entity names come from translations.
+
+### Removed in 1.1.0
+
+The Charging, Car Power State and old Car Ready entities read keys that only a
+firmware fork sent. Upstream preconditioning firmware does not send them, so they are
+gone, and Home Assistant deletes their entries on the next restart. Car Ready is back
+as a new entity that reads the firmware's `can_ready_state`.
 
 ## Installation
 

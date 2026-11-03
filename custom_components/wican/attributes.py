@@ -52,15 +52,6 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
         ],
     ),
     WiCANSensorEntityDescription(
-        # off / ready / charging, from the low nibble of 0x038 byte 0.
-        key="car_power_state",
-        translation_key="car_power_state",
-        icon="mdi:car-electric-outline",
-        device_class=SensorDeviceClass.ENUM,
-        options=["off", "ready", "charging", "unknown"],
-        extra_attributes=["car_power_raw", "car_power_age_ms"],
-    ),
-    WiCANSensorEntityDescription(
         key="battery_soc_pct",
         translation_key="battery_soc_pct",
         icon="mdi:battery-charging-high",
@@ -100,6 +91,15 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
         ],
     ),
     WiCANSensorEntityDescription(
+        # Which E-GMP car the firmware identified from CAN traffic this session.
+        key="egmp_car_model_detected",
+        translation_key="egmp_car_model_detected",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        icon="mdi:car-info",
+        device_class=SensorDeviceClass.ENUM,
+        options=["ev6", "ioniq5", "ioniq6"],
+    ),
+    WiCANSensorEntityDescription(
         key="vpn_status",
         translation_key="vpn_status",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -118,24 +118,23 @@ SENSOR_DESCRIPTIONS: tuple[WiCANSensorEntityDescription, ...] = (
 
 BINARY_SENSOR_DESCRIPTIONS: tuple[WiCANBinarySensorEntityDescription, ...] = (
     WiCANBinarySensorEntityDescription(
-        # True while the 0x038 power state low nibble reads 0x06.
-        key="charging",
-        translation_key="charging",
-        icon="mdi:ev-station",
-        device_class=BinarySensorDeviceClass.BATTERY_CHARGING,
-        extra_attributes=["car_power_state", "car_power_raw", "car_power_age_ms"],
-    ),
-    WiCANBinarySensorEntityDescription(
-        # Decoded from the low nibble of byte 0 of CAN frame 0x038.
-        key="car_ready",
-        translation_key="car_ready",
+        # "Ready" / "Not Ready", from the car's power state frame on CAN.
+        key="can_ready_state",
+        translation_key="can_ready_state",
         icon="mdi:car-electric",
         device_class=BinarySensorDeviceClass.RUNNING,
-        extra_attributes=[
-            "car_power_state",
-            "car_power_raw",
-            "car_power_age_ms",
-        ],
+    ),
+    WiCANBinarySensorEntityDescription(
+        key="precondition_requested",
+        translation_key="precondition_requested",
+        icon="mdi:thermometer-auto",
+    ),
+    WiCANBinarySensorEntityDescription(
+        key="precondition_active",
+        translation_key="precondition_active",
+        icon="mdi:heat-wave",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        extra_attributes=["precondition_starting"],
     ),
     WiCANBinarySensorEntityDescription(
         key="ble_status",

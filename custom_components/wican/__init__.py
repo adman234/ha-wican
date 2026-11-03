@@ -396,7 +396,9 @@ async def async_unload_entry(
 # Entities this integration used to create. Home Assistant keeps a registry row
 # when a platform stops providing an entity and shows it as "no longer provided"
 # rather than deleting it, so retired keys are removed explicitly.
-RETIRED_ENTITY_KEYS = ("charge_power_kw",)
+# car_power_state, car_ready and charging came from a firmware fork; upstream
+# preconditioning firmware does not send them (Car Ready now reads can_ready_state).
+RETIRED_ENTITY_KEYS = ("charge_power_kw", "car_power_state", "car_ready", "charging")
 
 
 def _async_remove_retired_entities(hass: HomeAssistant, entry: WiCANConfigEntry) -> None:
